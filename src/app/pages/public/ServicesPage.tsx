@@ -6,7 +6,7 @@ import { db, Service, Stylist, BookingSettings } from '../../../lib/db';
 import { formatCurrency } from '../../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/input';
-import exampleImage from 'figma:asset/e3a648e0743fbf117317611e9afa1b7f6dff0214.png';
+import exampleImage from '../../../assets/e3a648e0743fbf117317611e9afa1b7f6dff0214.png';
 
 export default function ServicesPage() {
   const navigate = useNavigate();

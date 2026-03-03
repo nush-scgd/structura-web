@@ -23,9 +23,9 @@ function Button({ variant = "default", className = "", ...props }: SimpleButtonP
 export function Certificates() {
   return (
     <div>
-      <Button variant="default" onClick={() => alert("Clicked!")}>
+      <button className="px-4 py-2 rounded-md bg-black text-white hover:bg-black/90" onClick={() => alert("Clicked!")}>
         Click me
-      </Button>
+      </button>
       {/* other code */}
     </div>
   );

@@ -8,7 +8,38 @@ import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Switch } from '../../ui/switch';
 import { Plus, Edit, Trash, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+
 import { toast } from 'sonner';
+
+import ImgHairAdvancedColour from '../../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Colour Techniques.png';
+import ImgHairAdvancedGents from '../../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Gents Cutting.png';
+import ImgHairBridalStyling from '../../../../assets/Horizontal_DesktopView/Course_Hair_Bridal Styling Masterclass.png';
+import ImgHairCuttingEssentials from '../../../../assets/Horizontal_DesktopView/Course_Hair_Cutting Essentials.png';
+import ImgHairFoundations from '../../../../assets/Horizontal_DesktopView/Course_Hair_Foundations & Styling.png';
+import ImgMakeupBridal from '../../../../assets/Horizontal_DesktopView/Course_Makeup_Bridal & Special Occasion Makeup.png';
+import ImgMakeupEyesLipsLashes from '../../../../assets/Horizontal_DesktopView/Course_Makeup_Eyes, Lips & Lashes.png';
+import ImgMakeupFoundationContour from '../../../../assets/Horizontal_DesktopView/Course_Makeup_Foundation & Contouring Techniques.png';
+import ImgMakeupProMastery from '../../../../assets/Horizontal_DesktopView/Course_Makeup_Professional Makeup Mastery.png';
+
+const STATIC_COURSE_IMAGES_BY_ID: Record<string, string> = {
+  // Hair
+  course_advanced_colour: ImgHairAdvancedColour,
+  course_gents_cutting: ImgHairAdvancedGents,
+  course_bridal_styling: ImgHairBridalStyling,
+  course_cutting_essentials: ImgHairCuttingEssentials,
+  course_foundations_styling: ImgHairFoundations,
+
+  // Makeup (use these IDs when you add the rows)
+  course_makeup_professional_mastery: ImgMakeupProMastery,
+  course_makeup_foundation_contour: ImgMakeupFoundationContour,
+  course_makeup_eyes_lips_lashes: ImgMakeupEyesLipsLashes,
+  course_makeup_bridal: ImgMakeupBridal,
+};
+
+function getStaticCourseImage(course: any): string | undefined {
+  const id = String(course?.id || '');
+  return STATIC_COURSE_IMAGES_BY_ID[id];
+}
 
 export function CourseManager() {
   const [view, setView] = useState<'list' | 'create' | 'edit'>('list');
@@ -22,25 +53,62 @@ export function CourseManager() {
   }, []);
 
   const loadData = async () => {
-    const [cData, iData, sData] = await Promise.all([
+    const results = await Promise.allSettled([
       db.getCourses(),
       db.getInstructors(),
-      db.getTenantSettings()
+      db.getTenantSettings(),
     ]);
-    setCourses(cData);
-    setInstructors(iData);
-    setSettings(sData);
+
+    const [cRes, iRes, sRes] = results;
+
+    if (cRes.status === 'fulfilled') setCourses(cRes.value);
+    else {
+      console.error('getCourses failed', cRes.reason);
+      setCourses([]);
+    }
+
+    if (iRes.status === 'fulfilled') setInstructors(iRes.value);
+    else {
+      console.warn('getInstructors failed, continuing with empty list', iRes.reason);
+      setInstructors([]);
+    }
+
+    if (sRes.status === 'fulfilled') setSettings(sRes.value);
+    else {
+      console.error('getTenantSettings failed', sRes.reason);
+      setSettings(null);
+    }
   };
 
   const handleSave = async (data: Course) => {
     try {
-      const id = editingCourse?.id || crypto.randomUUID();
-      await db.saveCourse({ ...data, id });
+      const id = (editingCourse?.id || (data as any)?.id || crypto.randomUUID()) as string;
+      const payload = { ...data, id } as any;
+
+      const anyDb = db as any;
+
+      // IMPORTANT: do not call db.saveCourse directly; guard via typeof checks first.
+      if (typeof anyDb.saveCourse === 'function') {
+        await anyDb.saveCourse(payload);
+      } else if (typeof anyDb.upsertCourse === 'function') {
+        await anyDb.upsertCourse(payload);
+      } else if (typeof anyDb.updateCourse === 'function' && typeof anyDb.createCourse === 'function') {
+        if (editingCourse?.id) await anyDb.updateCourse(payload);
+        else await anyDb.createCourse(payload);
+      } else if (typeof anyDb.saveCourses === 'function') {
+        await anyDb.saveCourses([payload]);
+      } else {
+        throw new Error(
+          'No course save method found on db. Expected one of: saveCourse, upsertCourse, createCourse/updateCourse, saveCourses.'
+        );
+      }
+
       await loadData();
       setView('list');
       setEditingCourse(null);
       toast.success(editingCourse ? 'Course updated' : 'Course created');
     } catch (e) {
+      console.error('Failed to save course', e);
       toast.error('Failed to save course');
     }
   };
@@ -81,7 +149,17 @@ export function CourseManager() {
                 <tr key={course.id} className="hover:bg-gray-50/50">
                   <td className="p-4">
                     <div className="w-10 h-10 rounded bg-gray-100 overflow-hidden">
-                      {course.thumbnail && <img src={course.thumbnail} alt="" className="w-full h-full object-cover" />}
+                      {(course.thumbnail || (course as any)?.images?.[0] || getStaticCourseImage(course)) && (
+                        <img
+                          src={(
+                            course.thumbnail ||
+                            (course as any)?.images?.[0] ||
+                            getStaticCourseImage(course)
+                          ) as string}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      )}
                     </div>
                   </td>
                   <td className="p-4 font-medium">{course.title}</td>
@@ -136,15 +214,24 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
   onCancel: () => void 
 }) {
   const { register, control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<Course>({
-    defaultValues: initialData || {
-      status: 'draft',
-      type: 'in-person',
-      certificationType: 'Completion',
-      currency: settings?.defaultCurrency || 'USD',
-      learningOutcomes: [''],
-      curriculum: [],
-      isAccredited: false
-    }
+    defaultValues: (initialData
+      ? ({
+          ...initialData,
+          thumbnail: (initialData as any)?.thumbnail || '',
+          images: (initialData as any)?.images || [],
+        } as any)
+      : {
+        id: crypto.randomUUID(),
+        status: 'inactive',
+        type: 'in-person',
+        certificationType: 'Completion',
+        currency: settings?.defaultCurrency || 'USD',
+        thumbnail: '',
+        images: [],
+        learningOutcomes: [''],
+        curriculum: [],
+        isAccredited: false
+      }) as any
   });
 
   const { fields: outcomeFields, append: appendOutcome, remove: removeOutcome } = useFieldArray({
@@ -178,6 +265,38 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
 
   const watchedType = watch('type');
   const watchedIsAccredited = watch('isAccredited');
+
+  const [uploadingThumb, setUploadingThumb] = useState(false);
+
+  const handleThumbnailUpload = async (file: File) => {
+    const courseId = (watch('id') as any) || initialData?.id || crypto.randomUUID();
+    // ensure id exists in form state (important for new courses)
+    setValue('id', courseId as any);
+
+    setUploadingThumb(true);
+    try {
+      const { publicUrl } = await db.uploadCourseImage(file, { courseId });
+
+      // Keep existing images (if any) and set the uploaded one as the first image.
+      const currentImages =
+        ((watch('images' as any) as any) ?? (initialData as any)?.images ?? []).filter(Boolean);
+
+      const nextImages = [publicUrl, ...currentImages.filter((u: string) => u !== publicUrl)];
+
+      // Save both fields:
+      // - `thumbnail` is used by the UI list/table today
+      // - `images` matches the DB schema (text[]) in Supabase
+      setValue('thumbnail', publicUrl as any);
+      setValue('images' as any, nextImages as any);
+
+      toast.success('Thumbnail uploaded');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to upload thumbnail');
+    } finally {
+      setUploadingThumb(false);
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit(onSave)} className="space-y-8 max-w-5xl mx-auto pb-20">
@@ -285,12 +404,11 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Status</Label>
-                  <Select onValueChange={(val) => setValue('status', val as any)} defaultValue={initialData?.status || 'draft'}>
+                  <Select onValueChange={(val) => setValue('status', val as any)} defaultValue={initialData?.status || 'inactive'}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="draft">Draft</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="archived">Archived</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -386,12 +504,50 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
            <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
              <h3 className="font-display text-lg">Media</h3>
              <div className="space-y-2">
-               <Label>Thumbnail URL</Label>
+               <Label>Thumbnail</Label>
+
+               <div className="flex items-center gap-2">
+                 <Input
+                   type="file"
+                   accept="image/*"
+                   disabled={uploadingThumb}
+                   onChange={(e) => {
+                     const file = e.target.files?.[0];
+                     if (file) handleThumbnailUpload(file);
+                     // allow selecting same file again
+                     e.currentTarget.value = '';
+                   }}
+                 />
+               </div>
+
+               <div className="text-xs text-gray-500">
+                 Or paste a URL below (advanced):
+               </div>
+
                <Input {...register('thumbnail')} placeholder="https://..." />
-               {watch('thumbnail') && (
+               <div className="text-xs text-gray-500">
+                 Stored as <span className="font-mono">courses.images</span> (array) and mirrored to <span className="font-mono">thumbnail</span> for UI.
+               </div>
+
+               {(
+                 (watch('thumbnail') as any) ||
+                 (watch('images' as any) as any)?.[0] ||
+                 getStaticCourseImage({ id: watch('id') })
+               ) && (
                  <div className="mt-2 aspect-video rounded bg-gray-100 overflow-hidden">
-                   <img src={watch('thumbnail')} className="w-full h-full object-cover" />
+                   <img
+                     src={(
+                       (watch('thumbnail') as any) ||
+                       (watch('images' as any) as any)?.[0] ||
+                       getStaticCourseImage({ id: watch('id') })
+                     ) as string}
+                     className="w-full h-full object-cover"
+                   />
                  </div>
+               )}
+
+               {uploadingThumb && (
+                 <div className="text-xs text-gray-500">Uploading...</div>
                )}
              </div>
            </div>

@@ -5,6 +5,47 @@ import { Link, useNavigate } from 'react-router';
 import { Check, Search, SlidersHorizontal } from 'lucide-react';
 import { formatCurrency } from '../../../lib/utils';
 import { Input } from '../../components/ui/input';
+import ImgHairAdvancedColour from '../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Colour Techniques.png';
+import ImgHairAdvancedGents from '../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Gents Cutting.png';
+import ImgHairBridalStyling from '../../../assets/Horizontal_DesktopView/Course_Hair_Bridal Styling Masterclass.png';
+import ImgHairCuttingEssentials from '../../../assets/Horizontal_DesktopView/Course_Hair_Cutting Essentials.png';
+import ImgHairFoundations from '../../../assets/Horizontal_DesktopView/Course_Hair_Foundations & Styling.png';
+import ImgMakeupBridal from '../../../assets/Horizontal_DesktopView/Course_Makeup_Bridal & Special Occasion Makeup.png';
+import ImgMakeupEyesLipsLashes from '../../../assets/Horizontal_DesktopView/Course_Makeup_Eyes, Lips & Lashes.png';
+import ImgMakeupFoundationContour from '../../../assets/Horizontal_DesktopView/Course_Makeup_Foundation & Contouring Techniques.png';
+import ImgMakeupProMastery from '../../../assets/Horizontal_DesktopView/Course_Makeup_Professional Makeup Mastery.png';
+
+const STATIC_COURSE_IMAGES_BY_ID: Record<string, string> = {
+  course_advanced_colour: ImgHairAdvancedColour,
+  course_gents_cutting: ImgHairAdvancedGents,
+  course_bridal_styling: ImgHairBridalStyling,
+  course_cutting_essentials: ImgHairCuttingEssentials,
+  course_foundations_styling: ImgHairFoundations,
+
+  // If/when you add these courses in Supabase, these will automatically work:
+  course_makeup_bridal: ImgMakeupBridal,
+  course_makeup_eyes_lips_lashes: ImgMakeupEyesLipsLashes,
+  course_makeup_foundation_contour: ImgMakeupFoundationContour,
+  course_makeup_professional_mastery: ImgMakeupProMastery,
+};
+
+function getStaticCourseImage(course: any): string | undefined {
+  const id = String(course?.id || '');
+  return STATIC_COURSE_IMAGES_BY_ID[id];
+}
+
+function getCourseDurationLabel(course: any): string {
+  // Prefer an explicit duration field if present
+  const direct = String((course as any)?.duration ?? (course as any)?.duration_days ?? (course as any)?.durationDays ?? '').trim();
+  if (direct) return direct;
+
+  // Parse from title suffix e.g. "(2 Days)", "(1 Day)", "(3 Weeks)"
+  const title = String((course as any)?.title ?? '');
+  const match = title.match(/\((\d+\s*(?:day|days|week|weeks|month|months))\)/i);
+  if (match?.[1]) return match[1].replace(/\s+/g, ' ').trim();
+
+  return 'Self-paced';
+}
 
 export default function AcademyPage() {
   const [courses, setCourses] = React.useState<Course[]>([]);
@@ -100,7 +141,12 @@ export default function AcademyPage() {
                 <article className="h-full flex flex-col border border-transparent hover:border-gray-200 transition-all duration-500 p-6 -mx-6 rounded-sm hover:bg-white hover:shadow-sm">
                   <div className="aspect-[16/9] bg-gray-100 mb-8 overflow-hidden relative">
                     <img 
-                      src={course.thumbnail} 
+                      src={
+                        (course as any)?.thumbnail ||
+                        (course as any)?.images?.[0] ||
+                        getStaticCourseImage(course) ||
+                        "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=900&q=80"
+                      } 
                       alt={course.title} 
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
                     />
@@ -115,7 +161,7 @@ export default function AcademyPage() {
                          {course.title}
                        </h3>
                        <span className="text-xl font-display text-gold whitespace-nowrap ml-4">
-                         {formatCurrency(course.price)}
+                         {formatCurrency(course.price, course.currency)}
                        </span>
                     </div>
                     
@@ -126,7 +172,7 @@ export default function AcademyPage() {
                     <div className="space-y-3 mb-8 border-t border-gray-100 pt-6">
                       <div className="flex items-center gap-3 text-sm text-gray-500">
                         <Check className="w-4 h-4 text-gold" />
-                        <span>Duration: {course.duration || 'Self-paced'}</span>
+                        <span>Duration: {getCourseDurationLabel(course)}</span>
                       </div>
                       {course.isAccredited && (
                         <div className="flex items-center gap-3 text-sm text-gray-500">

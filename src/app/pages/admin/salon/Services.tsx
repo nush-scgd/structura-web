@@ -38,13 +38,18 @@ export default function AdminServices() {
 
   async function loadData() {
     setLoading(true);
-    const [sData, stData] = await Promise.all([
-      db.getServices(),
-      db.getStylists()
-    ]);
-    setServices(sData);
-    setStylists(stData);
-    setLoading(false);
+    try {
+      const [sData, stData] = await Promise.all([db.getServices(), db.getStylists()]);
+      setServices(sData ?? []);
+      setStylists(stData ?? []);
+    } catch (err) {
+      console.error('Failed to load services/stylists:', err);
+      toast.error('Failed to load services');
+      setServices([]);
+      setStylists([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const handleEdit = (service: Service) => {
@@ -109,16 +114,33 @@ export default function AdminServices() {
   };
 
   // Filtering Logic
-  const filteredServices = services.filter(service => {
-    const matchesSearch = service.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          service.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || service.category === filterCategory;
-    const matchesStylist = filterStylist === 'all' || service.stylistId === filterStylist;
-    
-    return matchesSearch && matchesCategory && matchesStylist;
-  }).sort((a, b) => a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder);
+  const filteredServices = services
+    .filter((service) => {
+      const name = String(service.name ?? "").toLowerCase();
+      const category = String(service.category ?? "").toLowerCase();
+      const q = String(searchQuery ?? "").toLowerCase();
 
-  const categories = Array.from(new Set(services.map(s => s.category)));
+      const matchesSearch = name.includes(q) || category.includes(q);
+      const matchesCategory = filterCategory === 'all' || String(service.category ?? '') === filterCategory;
+      const matchesStylist = filterStylist === 'all' || String(service.stylistId ?? '') === filterStylist;
+
+      return matchesSearch && matchesCategory && matchesStylist;
+    })
+    .sort((a, b) => {
+      const catA = String(a.category ?? "");
+      const catB = String(b.category ?? "");
+      const byCategory = catA.localeCompare(catB);
+      if (byCategory !== 0) return byCategory;
+      return (Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0));
+    });
+
+  const categories = Array.from(
+    new Set(
+      services
+        .map((s) => s.category)
+        .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="space-y-8">

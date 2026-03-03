@@ -1,184 +1,311 @@
-import React, { useState, useEffect } from 'react';
-import { db, Stylist } from '../../../../lib/db';
-import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/input';
-import { Label } from '../../../components/ui/label';
-import { Textarea } from '../../../components/ui/textarea';
-import { toast } from 'sonner';
-import { Plus, Trash2, Edit2, Check, X, User } from 'lucide-react';
-import { generateId } from '../../../../lib/utils';
-import { Switch } from '../../../components/ui/switch';
+import React, { useEffect, useMemo, useState } from "react";
+import { db, Stylist } from "../../../../lib/db";
+import { Button } from "../../../components/ui/Button";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
+import { Textarea } from "../../../components/ui/textarea";
+import { Switch } from "../../../components/ui/switch";
+import { toast } from "sonner";
+import { Plus, Trash2, Edit2, Check, X, User } from "lucide-react";
+import { generateId } from "../../../../lib/utils";
 
-export default function AdminStylists() {
+type StylistFormState = {
+  id?: string;
+  name: string;
+  titleLine?: string;
+  bio?: string;
+  profileImageUrl?: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
+const emptyForm = (): StylistFormState => ({
+  name: "",
+  titleLine: "",
+  bio: "",
+  profileImageUrl: "",
+  isActive: true,
+});
+
+export default function Stylists() {
   const [stylists, setStylists] = useState<Stylist[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
 
-  // Form State
-  const [formData, setFormData] = useState<Partial<Stylist>>({
-    name: '',
-    titleLine: '',
-    bio: '',
-    profileImageUrl: '',
-    isActive: true
-  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<StylistFormState>(emptyForm());
+
+  const isEditing = useMemo(() => !!editingId, [editingId]);
 
   useEffect(() => {
-    loadStylists();
+    void load();
   }, []);
 
-  async function loadStylists() {
-    setLoading(true);
-    const data = await db.getStylists();
-    setStylists(data);
-    setLoading(false);
+  async function load() {
+    try {
+      setLoading(true);
+      const data = await db.getStylists();
+      setStylists(data);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Failed to load stylists");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const handleEdit = (stylist: Stylist) => {
-    setEditingId(stylist.id);
-    setFormData({ ...stylist });
-  };
-
-  const handleCancel = () => {
+  function startCreate() {
     setEditingId(null);
-    setFormData({
-      name: '',
-      titleLine: '',
-      bio: '',
-      profileImageUrl: '',
-      isActive: true
+    setForm(emptyForm());
+  }
+
+  function startEdit(st: Stylist) {
+    setEditingId(st.id);
+    setForm({
+      id: st.id,
+      name: st.name ?? "",
+      titleLine: st.titleLine ?? "",
+      bio: st.bio ?? "",
+      profileImageUrl: st.profileImageUrl ?? "",
+      isActive: st.isActive ?? true,
+      createdAt: st.createdAt,
     });
-  };
+  }
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this stylist?')) {
-      await db.deleteStylist(id);
-      loadStylists();
-      toast.success('Stylist deleted');
-    }
-  };
+  function cancel() {
+    setEditingId(null);
+    setForm(emptyForm());
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function onDelete(id: string) {
+    const st = stylists.find((s) => s.id === id);
+    const label = st?.name ? `“${st.name}”` : "this stylist";
+
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
+
     try {
-      const id = editingId || generateId();
-      const stylist: Stylist = {
-        id,
-        name: formData.name!,
-        titleLine: formData.titleLine,
-        bio: formData.bio,
-        profileImageUrl: formData.profileImageUrl,
-        isActive: formData.isActive ?? true,
-        createdAt: editingId ? (stylists.find(s => s.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
-      };
-
-      await db.saveStylist(stylist);
-      toast.success(editingId ? 'Stylist updated' : 'Stylist created');
-      handleCancel();
-      loadStylists();
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to save stylist');
+      setSaving(true);
+      await db.deleteStylist(id);
+      toast.success("Stylist deleted");
+      await load();
+      if (editingId === id) cancel();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message ? `Delete failed: ${e.message}` : "Delete failed");
+    } finally {
+      setSaving(false);
     }
-  };
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!form.name?.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const id = editingId ?? form.id ?? generateId();
+
+    // Preserve createdAt on edits
+    const existingCreatedAt =
+      stylists.find((s) => s.id === id)?.createdAt ?? form.createdAt ?? now;
+
+    const payload: Stylist = {
+      id,
+      name: form.name.trim(),
+      titleLine: form.titleLine?.trim() || undefined,
+      bio: form.bio?.trim() || undefined,
+      profileImageUrl: form.profileImageUrl?.trim() || undefined,
+      isActive: form.isActive ?? true,
+      createdAt: existingCreatedAt,
+    };
+
+    try {
+      setSaving(true);
+      await db.saveStylist(payload);
+      toast.success(isEditing ? "Stylist updated" : "Stylist created");
+      cancel();
+      await load();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message ? `Save failed: ${e.message}` : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-display">Stylists</h1>
-        {!editingId && (
-          <Button onClick={() => setEditingId('new')}>
-            <Plus className="w-4 h-4 mr-2" /> Add Stylist
-          </Button>
-        )}
+    <div className="space-y-10">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl tracking-wide">Stylists</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Create, edit, and remove stylists shown on the Salon site.
+          </p>
+        </div>
+
+        <Button onClick={startCreate} disabled={saving}>
+          <Plus className="mr-2 h-4 w-4" />
+          New stylist
+        </Button>
       </div>
 
-      {editingId && (
-        <div className="bg-white p-6 border border-gray-200 shadow-sm animate-in fade-in slide-in-from-top-4">
-          <h2 className="text-xl font-medium mb-6">{editingId === 'new' ? 'New Stylist' : 'Edit Stylist'}</h2>
-          <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input 
-                value={formData.name} 
-                onChange={e => setFormData({...formData, name: e.target.value})} 
-                required 
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Title / Role</Label>
-              <Input 
-                value={formData.titleLine} 
-                onChange={e => setFormData({...formData, titleLine: e.target.value})} 
-                placeholder="e.g. Senior Stylist"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Bio</Label>
-              <Textarea 
-                value={formData.bio} 
-                onChange={e => setFormData({...formData, bio: e.target.value})} 
-                rows={4}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Profile Image URL</Label>
-              <Input 
-                value={formData.profileImageUrl} 
-                onChange={e => setFormData({...formData, profileImageUrl: e.target.value})} 
-                placeholder="https://..."
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-               <Switch 
-                  checked={formData.isActive}
-                  onCheckedChange={(checked) => setFormData({...formData, isActive: checked})}
-               />
-               <Label>Active (Visible on site)</Label>
-            </div>
-
-            <div className="flex gap-4 pt-4">
-              <Button type="submit" className="bg-charcoal text-white">Save Stylist</Button>
-              <Button type="button" variant="outline" onClick={handleCancel}>Cancel</Button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {stylists.map(stylist => (
-          <div key={stylist.id} className={`bg-white border ${stylist.isActive ? 'border-gray-200' : 'border-gray-100 bg-gray-50 opacity-75'} p-6 flex flex-col`}>
-             <div className="flex items-start gap-4 mb-4">
-               <div className="w-16 h-16 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
-                  {stylist.profileImageUrl ? (
-                    <img src={stylist.profileImageUrl} alt={stylist.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <User className="w-6 h-6" />
-                    </div>
-                  )}
-               </div>
-               <div>
-                 <h3 className="font-display text-xl">{stylist.name}</h3>
-                 <p className="text-sm text-gold">{stylist.titleLine}</p>
-                 {!stylist.isActive && <span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">Inactive</span>}
-               </div>
-             </div>
-             <p className="text-gray-500 text-sm line-clamp-3 mb-6 flex-grow">{stylist.bio}</p>
-             <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
-                <Button size="sm" variant="ghost" onClick={() => handleEdit(stylist)}>
-                  <Edit2 className="w-4 h-4" />
-                </Button>
-                <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(stylist.id)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-             </div>
+      {/* Form */}
+      <div className="rounded-xl border bg-card p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="h-10 w-10 rounded-full border flex items-center justify-center">
+            <User className="h-5 w-5" />
           </div>
-        ))}
+
+          <div>
+            <div className="font-display tracking-wide">
+              {isEditing ? "Edit stylist" : "Create stylist"}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {isEditing
+                ? "Update details and save changes."
+                : "Fill in details and save to create a new stylist."}
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-5">
+          <div className="space-y-2">
+            <Label>Name</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              placeholder="e.g., Monique"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Title / Role</Label>
+            <Input
+              value={form.titleLine ?? ""}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, titleLine: e.target.value }))
+              }
+              placeholder="e.g., Senior Stylist & Lecturer"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Bio</Label>
+            <Textarea
+              value={form.bio ?? ""}
+              onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
+              placeholder="Short bio shown on the site…"
+              rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Profile Image URL</Label>
+            <Input
+              value={form.profileImageUrl ?? ""}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, profileImageUrl: e.target.value }))
+              }
+              placeholder="https://..."
+            />
+            <p className="text-xs text-muted-foreground">
+              For now this is a URL field. Later we’ll swap to Supabase Storage
+              upload.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <div className="font-medium">Active</div>
+              <div className="text-sm text-muted-foreground">
+                Visible on the site if enabled.
+              </div>
+            </div>
+            <Switch
+              checked={!!form.isActive}
+              onCheckedChange={(v) => setForm((p) => ({ ...p, isActive: v }))}
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <Button type="submit" disabled={saving}>
+              <Check className="mr-2 h-4 w-4" />
+              {saving ? "Saving…" : "Save stylist"}
+            </Button>
+
+            <Button type="button" variant="outline" onClick={cancel} disabled={saving}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      {/* List */}
+      <div className="rounded-xl border bg-card">
+        <div className="p-6 border-b">
+          <div className="font-display tracking-wide">All stylists</div>
+          <div className="text-sm text-muted-foreground mt-1">
+            {loading ? "Loading…" : `${stylists.length} stylist(s)`}
+          </div>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="text-sm text-muted-foreground">Loading stylists…</div>
+          ) : stylists.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No stylists yet. Create your first one.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {stylists.map((st) => (
+                <div
+                  key={st.id}
+                  className="flex items-center justify-between rounded-lg border p-4"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="font-medium truncate">{st.name}</div>
+                      {!st.isActive && (
+                        <span className="text-xs rounded-full border px-2 py-0.5 text-muted-foreground">
+                          inactive
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground truncate mt-1">
+                      {st.titleLine || "—"}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => startEdit(st)}
+                      disabled={saving}
+                    >
+                      <Edit2 className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+
+                    <Button
+                      variant="destructive"
+                      onClick={() => onDelete(st.id)}
+                      disabled={saving}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

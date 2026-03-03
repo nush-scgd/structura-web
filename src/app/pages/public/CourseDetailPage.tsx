@@ -6,6 +6,41 @@ import { Button } from '../../components/ui/Button';
 import { Check, MapPin, Clock, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 
+import ImgHairAdvancedColour from '../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Colour Techniques.png';
+import ImgHairAdvancedGents from '../../../assets/Horizontal_DesktopView/Course_Hair_Advanced Gents Cutting.png';
+import ImgHairBridalStyling from '../../../assets/Horizontal_DesktopView/Course_Hair_Bridal Styling Masterclass.png';
+import ImgHairCuttingEssentials from '../../../assets/Horizontal_DesktopView/Course_Hair_Cutting Essentials.png';
+import ImgHairFoundations from '../../../assets/Horizontal_DesktopView/Course_Hair_Foundations & Styling.png';
+import ImgMakeupBridal from '../../../assets/Horizontal_DesktopView/Course_Makeup_Bridal & Special Occasion Makeup.png';
+import ImgMakeupEyesLipsLashes from '../../../assets/Horizontal_DesktopView/Course_Makeup_Eyes, Lips & Lashes.png';
+import ImgMakeupFoundationContour from '../../../assets/Horizontal_DesktopView/Course_Makeup_Foundation & Contouring Techniques.png';
+import ImgMakeupProMastery from '../../../assets/Horizontal_DesktopView/Course_Makeup_Professional Makeup Mastery.png';
+
+const STATIC_COURSE_IMAGES_BY_ID: Record<string, string> = {
+  // Hair
+  course_advanced_colour: ImgHairAdvancedColour,
+  course_gents_cutting: ImgHairAdvancedGents,
+  course_bridal_styling: ImgHairBridalStyling,
+  course_cutting_essentials: ImgHairCuttingEssentials,
+  course_foundations_styling: ImgHairFoundations,
+
+  // Makeup
+  course_makeup_professional_mastery: ImgMakeupProMastery,
+  course_makeup_foundation_contour: ImgMakeupFoundationContour,
+  course_makeup_eyes_lips_lashes: ImgMakeupEyesLipsLashes,
+  course_makeup_bridal: ImgMakeupBridal,
+};
+
+function getCourseImageSrc(course: any): string {
+  const id = String(course?.id || '').trim();
+  return (
+    course?.thumbnail ||
+    course?.images?.[0] ||
+    STATIC_COURSE_IMAGES_BY_ID[id] ||
+    'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=900&q=80'
+  );
+}
+
 export default function CourseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -148,7 +183,7 @@ export default function CourseDetailPage() {
           <div className="relative">
             <div className="aspect-[4/5] md:aspect-square relative z-10">
               <img 
-                src={course.thumbnail} 
+                src={getCourseImageSrc(course)} 
                 alt={course.title} 
                 className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700 ease-in-out"
               />
@@ -267,7 +302,7 @@ export default function CourseDetailPage() {
                </h4>
                <div className="bg-white p-6 border border-gray-100">
                  <p className="font-medium">{course.location || "Structura Academy"}</p>
-                 <p className="text-gray-500 mt-1">{course.address || "123 Fashion Ave, New York, NY"}</p>
+                 <p className="text-gray-500 mt-1">{course.address || "76 Jan Shoba St, Colbyn, Pretoria, 0186"}</p>
                </div>
              </div>
            )}

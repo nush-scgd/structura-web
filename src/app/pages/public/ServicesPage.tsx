@@ -1,235 +1,305 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { motion } from 'motion/react';
-import { ArrowRight, Search } from 'lucide-react';
-import { db, Service, Stylist, BookingSettings } from '../../../lib/db';
-import { formatCurrency } from '../../../lib/utils';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/input';
-import exampleImage from '../../../assets/e3a648e0743fbf117317611e9afa1b7f6dff0214.png';
+// src/app/pages/public/ServicesPage.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import db from "../../../lib/db";
+
+type ServiceRow = {
+  id: string;
+  name?: string | null;
+  title?: string | null;
+  category?: string | null;
+  currency?: string | null;
+  price_minor?: number | null;
+  price?: number | null;       // legacy numeric
+  from_price?: number | null;  // legacy numeric
+  duration_minutes?: number | null;
+  duration?: string | null;    // legacy
+  image_url?: string | null;
+  images?: any;
+  description?: string | null;
+  is_active?: boolean | null;
+  status?: string | null;
+};
+
+type BookingSettingsSafe = {
+  globalRedirectActive: boolean;
+  bookingUrl: string;
+  ctaLabel: string;
+  openInNewTab: boolean;
+};
+
+function s(v: any, fallback = ""): string {
+  if (typeof v === "string") return v;
+  if (v == null) return fallback;
+  return String(v);
+}
+function b(v: any, fallback = false): boolean {
+  if (typeof v === "boolean") return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return fallback;
+}
+function n(v: any): number | null {
+  const num = typeof v === "number" ? v : v == null ? NaN : Number(v);
+  return Number.isFinite(num) ? num : null;
+}
+
+function moneyFromMinor(priceMinor: number | null | undefined): number | null {
+  if (priceMinor == null) return null;
+  return priceMinor / 100;
+}
+
+function formatMoney(amount: number | null, currencyCode?: string | null) {
+  if (amount == null) return "";
+  const code = s(currencyCode, "ZAR");
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // fallback when currency not supported by runtime
+    return `${code} ${amount.toFixed(2)}`;
+  }
+}
 
 export default function ServicesPage() {
-  const navigate = useNavigate();
-  
-  const [stylists, setStylists] = useState<Stylist[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [bookingSettings, setBookingSettings] = useState<BookingSettings | null>(null);
+  const [services, setServices] = useState<ServiceRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>("All");
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // Hero Stylist (Monique)
-  const monique = stylists.find(s => s.name.toLowerCase().includes('monique')) || stylists[0];
+  // Safe defaults so the page never dies if booking_settings is mis-shaped
+  const [bookingSettings, setBookingSettings] = useState<BookingSettingsSafe>({
+    globalRedirectActive: true,
+    bookingUrl: "https://structurahair.booksy.com",
+    ctaLabel: "Book Now",
+    openInNewTab: true,
+  });
 
   useEffect(() => {
-    async function loadData() {
-      // Seed if needed for first run
-      await db.seedIfNeeded();
-      
-      const [sData, stData, bData] = await Promise.all([
-        db.getServices(),
-        db.getStylists(),
-        db.getBookingSettings()
-      ]);
-      
-      // Filter Active only
-      setServices(sData.filter(s => s.isActive));
-      setStylists(stData.filter(s => s.isActive));
-      setBookingSettings(bData);
-      setLoading(false);
-    }
-    loadData();
+    let alive = true;
+
+    const load = async () => {
+      setLoading(true);
+
+      // 1) load services (this must work regardless of booking settings)
+      const svc = await db.getServices?.();
+      const normalized: ServiceRow[] = (Array.isArray(svc) ? svc : []).map((row: any) => ({
+        ...row,
+        id: s(row.id),
+        name: row.name ?? row.title ?? "",
+        title: row.title ?? row.name ?? "",
+        category: row.category ?? "",
+        currency: row.currency ?? "ZAR",
+      }));
+
+      // Sort safely (no localeCompare on null)
+      normalized.sort((a, bb) => s(a.name).localeCompare(s(bb.name)));
+
+      // 2) booking settings (best effort)
+      try {
+        const bs: any = await db.getBookingSettings?.();
+        const next: BookingSettingsSafe = {
+          globalRedirectActive: b(bs?.globalRedirectActive, true),
+          bookingUrl: s(bs?.bookingUrl, "https://structurahair.booksy.com"),
+          ctaLabel: s(bs?.defaultCtaLabel ?? bs?.ctaLabel, "Book Now"),
+          openInNewTab: b(bs?.openInNewTab, true),
+        };
+        if (alive) setBookingSettings(next);
+      } catch {
+        // swallow; keep defaults
+      }
+
+      if (alive) {
+        setServices(normalized);
+        setLoading(false);
+      }
+    };
+
+    load().catch(() => {
+      if (alive) setLoading(false);
+    });
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const handleBook = () => {
-    const url = bookingSettings?.bookingUrl || 'https://structurahair.booksy.com';
-    const target = bookingSettings?.openInNewTab ? '_blank' : '_self';
-    window.open(url, target);
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const svc of services) {
+      const c = s(svc.category).trim();
+      if (c) set.add(c);
+    }
+    return ["All", ...Array.from(set).sort((a, bb) => a.localeCompare(bb))];
+  }, [services]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return services.filter((svc) => {
+      const name = s(svc.name).toLowerCase();
+      const desc = s(svc.description).toLowerCase();
+      const cat = s(svc.category);
+
+      const matchesSearch = !q || name.includes(q) || desc.includes(q);
+      const matchesCategory = category === "All" || cat === category;
+
+      // if you later want to hide inactive services publicly, uncomment:
+      // const active = svc.is_active !== false && svc.status !== "inactive";
+      // return active && matchesSearch && matchesCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [services, search, category]);
+
+  const handleBookNow = () => {
+    const url = bookingSettings.bookingUrl;
+    if (!url) return;
+    if (bookingSettings.openInNewTab) window.open(url, "_blank", "noopener,noreferrer");
+    else window.location.href = url;
   };
 
-  // Group Services by Category
-  const filteredServices = services.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  ).sort((a, b) => a.sortOrder - b.sortOrder);
-
-  const servicesByCategory: Record<string, Service[]> = {};
-  filteredServices.forEach(s => {
-    if (!servicesByCategory[s.category]) {
-      servicesByCategory[s.category] = [];
-    }
-    servicesByCategory[s.category].push(s);
-  });
-
-  const categoryOrder = ['Cutting', 'Styling', 'Colour', 'Treatments', 'Extensions']; // Preferred order
-  const categories = Object.keys(servicesByCategory).sort((a, b) => {
-    const idxA = categoryOrder.indexOf(a);
-    const idxB = categoryOrder.indexOf(b);
-    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-    if (idxA !== -1) return -1;
-    if (idxB !== -1) return 1;
-    return a.localeCompare(b);
-  });
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-ivory">Loading...</div>;
-
   return (
-    <div className="min-h-screen bg-ivory text-charcoal font-serif selection:bg-gold/30">
-      
-      {/* 1. Hero Section */}
-      <section className="relative min-h-[70vh] flex items-center justify-center overflow-hidden border-b border-gray-100">
-        <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-ivory/80 z-10" />
-          {/* Subtle background texture or abstract image could go here */}
-          <img 
-            src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=2000&q=80" 
-            className="w-full h-full object-cover opacity-10"
-            alt="Texture"
-          />
-        </div>
-        
-        <div className="relative z-20 text-center px-6 max-w-5xl mx-auto">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="font-display text-5xl md:text-7xl lg:text-8xl leading-tight mb-8"
-          >
-            Get your hair done <br/>
-            <span className="italic text-gold-dark">by {monique?.name || 'Structura'}.</span>
-          </motion.h1>
-          
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-lg md:text-xl text-gray-600 mb-10 font-serif tracking-wide uppercase max-w-2xl mx-auto"
-          >
-            {monique?.titleLine || "Luxury Hair Salon & Academy"}
-          </motion.p>
-          
-          <motion.div
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             transition={{ delay: 0.6, duration: 0.8 }}
-             className="flex justify-center"
-          >
-            <Button 
-              onClick={handleBook}
-              className="bg-charcoal text-white hover:bg-gold hover:text-white px-10 py-6 text-lg tracking-widest uppercase rounded-none"
+    <div className="min-h-screen bg-ivory text-charcoal font-serif">
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-4xl tracking-tight">Services</h1>
+            <p className="text-sm text-charcoal/70 mt-1">
+              Explore the salon menu, pricing, and durations.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {bookingSettings.globalRedirectActive && (
+              <button
+                onClick={handleBookNow}
+                className="px-5 py-3 bg-black text-white rounded-md tracking-wide"
+              >
+                {bookingSettings.ctaLabel || "Book Now"}
+              </button>
+            )}
+            <Link
+              to="/academy"
+              className="px-5 py-3 border border-black/15 rounded-md"
             >
-              {bookingSettings?.ctaLabel || 'Book Appointment'}
-            </Button>
-          </motion.div>
+              Academy
+            </Link>
+          </div>
         </div>
-      </section>
 
-      {/* 2. Search & Filter */}
-      <div className="bg-white border-b border-gray-100 sticky top-20 z-40 shadow-sm">
-        <div className="container-luxury py-6">
-           <div className="relative max-w-xl mx-auto">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input 
-                placeholder="Search for a service..." 
-                className="pl-12 bg-gray-50 border-gray-200 focus:border-gold rounded-none"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-           </div>
+        <div className="mt-8 flex gap-3 flex-wrap items-center">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search services..."
+            className="w-full md:w-96 px-4 py-3 rounded-md border border-black/10 bg-white"
+          />
+
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="px-4 py-3 rounded-md border border-black/10 bg-white"
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <div className="text-sm text-charcoal/70 ml-auto">
+            Showing {filtered.length} result{filtered.length === 1 ? "" : "s"}
+          </div>
         </div>
-      </div>
 
-      {/* 3. Services List */}
-      <div className="max-w-[1400px] mx-auto px-6 md:px-12 py-20">
-         {categories.length > 0 ? (
-           <div className="space-y-32">
-             {categories.map((category, index) => (
-               <div key={category} className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-24 items-start">
-                  
-                  {/* Category Header */}
-                  <div className="lg:col-span-4 lg:sticky lg:top-40">
-                     <h2 className="font-display text-5xl md:text-6xl mb-4 text-gray-200">{String(index + 1).padStart(2, '0')}</h2>
-                     <h3 className="font-display text-4xl text-charcoal mb-4">{category}</h3>
-                     <div className="w-12 h-1 bg-gold mb-6" />
-                     <p className="text-gray-500 font-serif leading-relaxed">
-                        Expertly curated {category.toLowerCase()} services designed to enhance your natural beauty.
-                     </p>
-                  </div>
-
-                  {/* Services Grid */}
-                  <div className="lg:col-span-8 grid grid-cols-1 gap-8">
-                     {servicesByCategory[category].map((service) => (
-                       <div 
-                         key={service.id} 
-                         className="group bg-white p-8 border border-gray-100 hover:border-gold/50 hover:shadow-sm transition-all duration-300"
-                       >
-                          <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
-                             <div>
-                               <h4 className="font-display text-2xl mb-2 group-hover:text-gold-dark transition-colors">{service.name}</h4>
-                               {service.description && (
-                                 <p className="text-gray-500 font-serif text-sm max-w-md mb-4">{service.description}</p>
-                               )}
-                               <div className="flex items-center gap-4 text-xs uppercase tracking-widest text-gray-400">
-                                  {service.durationMinutes && (
-                                    <span>{service.durationMinutes} Mins</span>
-                                  )}
-                                  {/* Stylist Name could go here if needed, but grouping by category implies shared services often */}
-                               </div>
-                             </div>
-                             <div className="flex flex-col items-end gap-4">
-                               <span className="font-display text-xl text-charcoal">
-                                 {formatCurrency(service.priceMinor / 100, service.currency)}
-                               </span>
-                               <Button 
-                                 size="sm" 
-                                 variant="outline" 
-                                 className="uppercase tracking-widest text-xs border-gray-200 hover:border-charcoal hover:bg-charcoal hover:text-white rounded-none"
-                                 onClick={handleBook}
-                               >
-                                 Make a Booking
-                               </Button>
-                             </div>
-                          </div>
-                       </div>
-                     ))}
-                  </div>
-               </div>
-             ))}
-           </div>
-         ) : (
-           <div className="py-20 text-center">
-             <h3 className="font-display text-2xl text-gray-400">No services found.</h3>
-             <p className="text-gray-500 mt-2">Try adjusting your search or check back later.</p>
-           </div>
-         )}
-      </div>
-
-      {/* 4. Stylist Feature (Bottom) */}
-      <section className="bg-white py-24 border-t border-gray-100">
-         <div className="container-luxury">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-               <div className="order-1 lg:order-1">
-                  <span className="text-gold uppercase tracking-widest text-sm font-semibold mb-4 block">Meet the Team</span>
-                  <h2 className="text-4xl font-display mb-6">{monique?.name}</h2>
-                  <p className="text-xl font-serif text-gray-600 mb-8 italic">{monique?.titleLine}</p>
-                  <p className="text-gray-500 leading-relaxed mb-8">
-                    {monique?.bio}
-                  </p>
-                  <Button onClick={handleBook} variant="outline">Book With {monique?.name.split(' ')[0]}</Button>
-               </div>
-               <div className="order-2 lg:order-2">
-                 <div className="aspect-[3/4] bg-[#F7F5F2] relative overflow-hidden rounded-xl">
-                    <img 
-                        src={exampleImage} 
-                        alt="Monique" 
-                        className="w-full h-full object-cover object-center" 
-                    />
-                 </div>
-               </div>
+        <div className="mt-10">
+          {loading ? (
+            <div className="py-24 text-center text-charcoal/60">Loading services…</div>
+          ) : filtered.length === 0 ? (
+            <div className="border border-dashed border-black/20 rounded-lg py-24 text-center">
+              <div className="text-xl text-charcoal/70">No services found</div>
+              <div className="text-sm text-charcoal/50 mt-2">
+                Try another search or category.
+              </div>
             </div>
-         </div>
-      </section>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filtered.map((svc) => {
+                const displayName = s(svc.name || svc.title, "Service");
+                const currency = s(svc.currency, "ZAR");
 
+                // Prefer price_minor, fallback to numeric price
+                const main = moneyFromMinor(n(svc.price_minor));
+                const legacyPrice = n(svc.price);
+                const priceValue = main ?? legacyPrice;
+
+                const legacyFrom = n(svc.from_price);
+                const fromValue = legacyFrom != null && legacyFrom > 0 ? legacyFrom : null;
+
+                const duration = svc.duration_minutes ?? (svc.duration ? Number(svc.duration) : null);
+                const durationLabel = duration ? `${duration} min` : "";
+
+                const image =
+                  s(svc.image_url) ||
+                  (Array.isArray(svc.images) ? svc.images?.[0] : null) ||
+                  (typeof svc.images === "object" ? svc.images?.[0] : null) ||
+                  "";
+
+                return (
+                  <div
+                    key={s(svc.id)}
+                    className="bg-white border border-black/10 rounded-xl overflow-hidden"
+                  >
+                    {image ? (
+                      <div className="h-44 bg-black/5">
+                        <img
+                          src={image}
+                          alt={displayName}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : null}
+
+                    <div className="p-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs uppercase tracking-widest text-charcoal/60">
+                            {s(svc.category, "Salon")}
+                          </div>
+                          <h3 className="text-xl mt-1">{displayName}</h3>
+                          {svc.description ? (
+                            <p className="text-sm text-charcoal/70 mt-2 leading-relaxed">
+                              {svc.description}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="text-right whitespace-nowrap">
+                          {fromValue != null ? (
+                            <div className="text-xs text-charcoal/60">
+                              from {formatMoney(fromValue, currency)}
+                            </div>
+                          ) : null}
+                          <div className="text-lg">
+                            {priceValue != null ? formatMoney(priceValue, currency) : ""}
+                          </div>
+                          {durationLabel ? (
+                            <div className="text-xs text-charcoal/60 mt-1">{durationLabel}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

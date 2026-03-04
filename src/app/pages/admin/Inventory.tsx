@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, Product } from '../../../lib/db';
-import { Button } from '../../components/ui/button';
+import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/input';
 import { Search, AlertTriangle, Save, History } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { db, BookingSettings } from "../../../lib/db";
-import { Button } from "../../components/ui/button";
+import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";

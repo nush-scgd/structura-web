@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, Product } from '../../../lib/db';
-import { Button } from '../../components/ui/button';
+import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/input';
 import { Plus, Search, Filter, MoreHorizontal, Edit, Trash, Copy } from 'lucide-react';
 import { ProductForm } from '../../components/admin/ProductForm';

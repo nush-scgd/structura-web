@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db, AcademyEnrollment, CourseSession, Course, SessionResource } from '../../../lib/db';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { Button } from '../../../components/ui/button';
 import { Calendar, PlayCircle, FileText, CheckCircle, Clock, ArrowRight, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router';
 import { format } from 'date-fns';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, AcademyEnrollment, Course, CourseSession } from '../../../../lib/db';
-import { Button } from '../../ui/button';
+import { Button } from '../../ui/Button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { toast } from 'sonner';
 import { MoreHorizontal, Mail } from 'lucide-react';

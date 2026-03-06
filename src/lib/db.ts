@@ -89,10 +89,44 @@ export type Course = {
   learningOutcomes?: string[];
 };
 
+export type Instructor = {
+  id: string;
+  name: string;
+  title?: string;
+  bio?: string;
+  avatarUrl?: string;
+  links?: any;
+  isActive?: boolean;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CourseSession = {
+  id: string;
+  courseId: string;
+  instructorId: string | null;
+  title: string;
+  intakeLabel?: string | null;
+  status: string;
+  startDate: string;
+  endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  capacity: number;
+  enrolledCount: number;
+  location?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 const TABLES = {
   appSettings: "app_settings",
   bookingSettings: "booking_settings",
   courses: "courses",
+  courseSessions: "course_sessions",
   services: "services",
   stylists: "stylists",
   products: "products",
@@ -365,6 +399,43 @@ function mapStylistRow(s: any): Stylist {
   };
 }
 
+function mapInstructorRow(i: any): Instructor {
+  return {
+    id: normalizeString(i?.id),
+    name: normalizeString(i?.name),
+    title: i?.title ?? undefined,
+    bio: i?.bio ?? undefined,
+    avatarUrl: i?.avatar_url ?? undefined,
+    links: i?.links ?? undefined,
+    isActive: i?.is_active != null ? normalizeBool(i.is_active, true) : undefined,
+    tenantId: i?.tenant_id ?? null,
+    createdAt: i?.created_at ?? undefined,
+    updatedAt: i?.updated_at ?? undefined,
+  };
+}
+
+function mapCourseSessionRow(s: any): CourseSession {
+  return {
+    id: normalizeString(s?.id),
+    courseId: normalizeString(s?.course_id),
+    instructorId: s?.instructor_id ?? null,
+    title: normalizeString(s?.title),
+    intakeLabel: s?.intake_label ?? null,
+    status: normalizeString(s?.status, "scheduled"),
+    startDate: normalizeString(s?.start_date),
+    endDate: normalizeString(s?.end_date),
+    startTime: s?.start_time ?? null,
+    endTime: s?.end_time ?? null,
+    capacity: normalizeNumber(s?.capacity, 0),
+    enrolledCount: normalizeNumber(s?.enrolled_count, 0),
+    location: s?.location ?? null,
+    notes: s?.notes ?? null,
+    isActive: normalizeBool(s?.is_active, true),
+    createdAt: s?.created_at ?? undefined,
+    updatedAt: s?.updated_at ?? undefined,
+  };
+}
+
 async function getStylistsInternal(): Promise<Stylist[]> {
   const res = await supabase
     .from(TABLES.stylists)
@@ -494,20 +565,86 @@ async function getProductsInternal(): Promise<any[]> {
   }));
 }
 
-async function getInstructorsInternal(): Promise<any[]> {
-  const res = await supabase.from(TABLES.instructors).select("*");
-  if (!res.error) return res.data ?? [];
+async function getInstructorsInternal(): Promise<Instructor[]> {
+  const res = await supabase.from(TABLES.instructors).select("*").order("name", { ascending: true });
+  if (!res.error) return (res.data ?? []).map(mapInstructorRow);
 
-  // If the table/endpoint doesn't exist (PostgREST 404), just fall back quietly.
   const status = (res.error as any)?.status ?? (res.error as any)?.code;
   if (status === 404) {
     const fallback = await kv.get<any[]>("instructors");
-    return safeArray<any>(fallback);
+    return safeArray<any>(fallback).map(mapInstructorRow);
   }
 
   console.warn("getInstructors table read failed, trying app_settings fallback:", res.error);
   const fallback = await kv.get<any[]>("instructors");
-  return safeArray<any>(fallback);
+  return safeArray<any>(fallback).map(mapInstructorRow);
+}
+
+async function getCourseSessionsInternal(courseId?: string): Promise<CourseSession[]> {
+  let query = supabase
+    .from(TABLES.courseSessions)
+    .select("*")
+    .order("start_date", { ascending: true })
+    .order("start_time", { ascending: true });
+
+  if (courseId) {
+    query = query.eq("course_id", normalizeIdOrThrow(courseId, "course id"));
+  }
+
+  const res = await query;
+  if (res.error) {
+    console.error("getCourseSessions error:", res.error);
+    throw new Error(res.error.message);
+  }
+
+  return (res.data ?? []).map(mapCourseSessionRow);
+}
+
+async function getCourseSessionInternal(id: string): Promise<CourseSession | null> {
+  const sessionId = normalizeIdOrThrow(id, "course session id");
+  const res = await supabase
+    .from(TABLES.courseSessions)
+    .select("*")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (res.error) {
+    console.error("getCourseSession error:", res.error);
+    throw new Error(res.error.message);
+  }
+
+  if (!res.data) return null;
+  return mapCourseSessionRow(res.data);
+}
+
+async function createCourseSessionInternal(input: any): Promise<CourseSession> {
+  const res = await supabase
+    .from(TABLES.courseSessions)
+    .insert(input)
+    .select("*")
+    .single();
+
+  if (res.error) throw new Error(res.error.message);
+  return mapCourseSessionRow(res.data);
+}
+
+async function updateCourseSessionInternal(id: string, patch: any): Promise<CourseSession> {
+  const sessionId = normalizeIdOrThrow(id, "course session id");
+  const res = await supabase
+    .from(TABLES.courseSessions)
+    .update(patch)
+    .eq("id", sessionId)
+    .select("*")
+    .single();
+
+  if (res.error) throw new Error(res.error.message);
+  return mapCourseSessionRow(res.data);
+}
+
+async function deleteCourseSessionInternal(id: string): Promise<void> {
+  const sessionId = normalizeIdOrThrow(id, "course session id");
+  const res = await supabase.from(TABLES.courseSessions).delete().eq("id", sessionId);
+  if (res.error) throw new Error(res.error.message);
 }
 
 async function getProfileInternal(userId: string): Promise<any | null> {
@@ -728,6 +865,8 @@ export const db = {
   // data
   getCourses: getCoursesInternal,
   getCourse: getCourseInternal,
+  getCourseSessions: getCourseSessionsInternal,
+  getCourseSession: getCourseSessionInternal,
   getServices: getServicesInternal,
   getStylists: getStylistsInternal,
   getService: getServiceInternal,
@@ -742,6 +881,9 @@ export const db = {
   createCourse: createCourseInternal,
   updateCourse: updateCourseInternal,
   deleteCourse: deleteCourseInternal,
+  createCourseSession: createCourseSessionInternal,
+  updateCourseSession: updateCourseSessionInternal,
+  deleteCourseSession: deleteCourseSessionInternal,
 
   createProduct: createProductInternal,
   updateProduct: updateProductInternal,

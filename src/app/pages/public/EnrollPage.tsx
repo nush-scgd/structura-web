@@ -7,7 +7,6 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
-import { generateId } from '../../../lib/utils';
 
 export default function EnrollPage() {
   const [searchParams] = useSearchParams();
@@ -76,24 +75,13 @@ export default function EnrollPage() {
         return;
       }
 
-      const studentId = generateId();
-      const enrollmentId = generateId();
       const nowIso = new Date().toISOString();
 
-      await db.saveProfile({
-        id: studentId,
-        email: email.trim(),
-        fullName: fullName.trim() || 'Student',
-        role: 'student',
-        status: 'active',
-        createdAt: nowIso,
-      } as any);
-
-      await db.saveAcademyEnrollment({
-        id: enrollmentId,
+      const enrollment = await db.saveAcademyEnrollment({
+        id: crypto.randomUUID(),
         courseId,
         sessionId: sessionId || undefined,
-        studentId,
+        studentId: null,
         studentName: fullName.trim() || 'Student',
         studentEmail: email.trim(),
         status: 'requested',
@@ -103,7 +91,7 @@ export default function EnrollPage() {
         enrolledAt: nowIso,
       } as any);
 
-      setSubmissionRef(enrollmentId);
+      setSubmissionRef(enrollment.id);
       setSubmitted(true);
       toast.success('Enrollment request received.');
     } catch (error: any) {

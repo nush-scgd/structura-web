@@ -122,6 +122,35 @@ export type CourseSession = {
   updatedAt?: string;
 };
 
+export type Profile = {
+  id: string;
+  role: string;
+  email: string;
+  status: string;
+  fullName?: string;
+  createdAt?: string;
+};
+
+export type AcademyEnrollment = {
+  id: string;
+  studentId: string;
+  courseId: string;
+  sessionId?: string | null;
+  studentName?: string | null;
+  studentEmail?: string | null;
+  status: string;
+  paymentStatus: string;
+  amountPaid: number;
+  currency: string;
+  enrolledAt?: string;
+  invoiceSentAt?: string | null;
+  paymentConfirmedAt?: string | null;
+  notes?: string | null;
+  proofOfPaymentUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 const TABLES = {
   appSettings: "app_settings",
   bookingSettings: "booking_settings",
@@ -172,6 +201,14 @@ function normalizeIdOrThrow(id: unknown, label = "id"): string {
     throw new Error(`Invalid ${label}. Expected string/uuid, got: ${String(id)}`);
   }
   return s;
+}
+
+function isUuid(v: unknown): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeString(v));
+}
+
+function makeUuid(): string {
+  return globalThis.crypto?.randomUUID?.() ?? '00000000-0000-4000-8000-000000000000';
 }
 
 /**
@@ -436,6 +473,39 @@ function mapCourseSessionRow(s: any): CourseSession {
   };
 }
 
+function mapProfileRow(p: any): Profile {
+  return {
+    id: normalizeString(p?.id),
+    role: normalizeString(p?.role, 'student'),
+    email: normalizeString(p?.email),
+    status: normalizeString(p?.status, 'lead'),
+    fullName: p?.full_name ?? undefined,
+    createdAt: p?.created_at ?? undefined,
+  };
+}
+
+function mapAcademyEnrollmentRow(e: any): AcademyEnrollment {
+  return {
+    id: normalizeString(e?.id),
+    studentId: normalizeString(e?.student_id),
+    courseId: normalizeString(e?.course_id),
+    sessionId: e?.session_id ?? null,
+    studentName: e?.student_name ?? null,
+    studentEmail: e?.student_email ?? null,
+    status: normalizeString(e?.status, 'requested'),
+    paymentStatus: normalizeString(e?.payment_status, 'pending'),
+    amountPaid: normalizeNumber(e?.amount_paid, 0),
+    currency: normalizeString(e?.currency, 'ZAR'),
+    enrolledAt: e?.enrolled_at ?? undefined,
+    invoiceSentAt: e?.invoice_sent_at ?? null,
+    paymentConfirmedAt: e?.payment_confirmed_at ?? null,
+    notes: e?.notes ?? null,
+    proofOfPaymentUrl: e?.proof_of_payment_url ?? null,
+    createdAt: e?.created_at ?? undefined,
+    updatedAt: e?.updated_at ?? undefined,
+  };
+}
+
 async function getStylistsInternal(): Promise<Stylist[]> {
   const res = await supabase
     .from(TABLES.stylists)
@@ -647,13 +717,135 @@ async function deleteCourseSessionInternal(id: string): Promise<void> {
   if (res.error) throw new Error(res.error.message);
 }
 
-async function getProfileInternal(userId: string): Promise<any | null> {
-  const res = await supabase.from(TABLES.profiles).select("*").eq("id", userId).maybeSingle();
+async function getProfileInternal(userId: string): Promise<Profile | null> {
+  const id = normalizeString(userId).trim();
+  if (!id) return null;
+
+  const res = await supabase.from(TABLES.profiles).select('*').eq('id', id).maybeSingle();
   if (res.error) {
-    console.error("getProfile error:", res.error);
+    console.error('getProfile error:', res.error);
     return null;
   }
-  return res.data ?? null;
+  return res.data ? mapProfileRow(res.data) : null;
+}
+
+async function getProfileByEmailInternal(email: string): Promise<Profile | null> {
+  const normalizedEmail = normalizeString(email).trim().toLowerCase();
+  if (!normalizedEmail) return null;
+
+  const res = await supabase
+    .from(TABLES.profiles)
+    .select('*')
+    .ilike('email', normalizedEmail)
+    .maybeSingle();
+
+  if (res.error) {
+    console.error('getProfileByEmail error:', res.error);
+    return null;
+  }
+
+  return res.data ? mapProfileRow(res.data) : null;
+}
+
+async function saveProfileInternal(input: any): Promise<Profile> {
+  const normalizedEmail = normalizeString(input?.email).trim().toLowerCase();
+  if (!normalizedEmail) throw new Error('Email is required');
+
+  const existingByEmail = await getProfileByEmailInternal(normalizedEmail);
+  const profileId = existingByEmail?.id ?? (isUuid(input?.id) ? normalizeString(input.id) : makeUuid());
+
+  const payload = {
+    id: profileId,
+    role: normalizeString(input?.role, existingByEmail?.role ?? 'student'),
+    email: normalizedEmail,
+    status: normalizeString(input?.status, existingByEmail?.status ?? 'lead'),
+    full_name: normalizeString(input?.fullName ?? input?.full_name, existingByEmail?.fullName ?? ''),
+    created_at: input?.createdAt ?? input?.created_at ?? existingByEmail?.createdAt ?? new Date().toISOString(),
+  };
+
+  const res = await supabase
+    .from(TABLES.profiles)
+    .upsert(payload, { onConflict: 'id' })
+    .select('*')
+    .single();
+
+  if (res.error) {
+    console.error('saveProfile error:', res.error);
+    throw new Error(res.error.message);
+  }
+
+  return mapProfileRow(res.data);
+}
+
+async function getAcademyEnrollmentsInternal(): Promise<AcademyEnrollment[]> {
+  const res = await supabase
+    .from(TABLES.enrollments)
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (res.error) {
+    console.error('getAcademyEnrollments error:', res.error);
+    throw new Error(res.error.message);
+  }
+
+  return (res.data ?? []).map(mapAcademyEnrollmentRow);
+}
+
+async function getStudentEnrollmentsInternal(identifier: string): Promise<AcademyEnrollment[]> {
+  const value = normalizeString(identifier).trim();
+  if (!value) return [];
+
+  let query = supabase.from(TABLES.enrollments).select('*').order('created_at', { ascending: false });
+  query = value.includes('@')
+    ? query.ilike('student_email', value.toLowerCase())
+    : query.eq('student_id', value);
+
+  const res = await query;
+  if (res.error) {
+    console.error('getStudentEnrollments error:', res.error);
+    throw new Error(res.error.message);
+  }
+
+  return (res.data ?? []).map(mapAcademyEnrollmentRow);
+}
+
+async function saveAcademyEnrollmentInternal(input: any): Promise<AcademyEnrollment> {
+  const normalizedEmail = normalizeString(input?.studentEmail ?? input?.student_email).trim().toLowerCase();
+  const existingProfile = normalizedEmail ? await getProfileByEmailInternal(normalizedEmail) : null;
+
+  const enrollmentId = isUuid(input?.id) ? normalizeString(input.id) : makeUuid();
+  const studentId = existingProfile?.id ?? (isUuid(input?.studentId ?? input?.student_id) ? normalizeString(input?.studentId ?? input?.student_id) : makeUuid());
+
+  const payload = {
+    id: enrollmentId,
+    student_id: studentId,
+    course_id: normalizeIdOrThrow(input?.courseId ?? input?.course_id, 'course id'),
+    session_id: input?.sessionId ?? input?.session_id ?? null,
+    student_name: normalizeString(input?.studentName ?? input?.student_name, ''),
+    student_email: normalizedEmail || null,
+    status: normalizeString(input?.status, 'requested'),
+    payment_status: normalizeString(input?.paymentStatus ?? input?.payment_status, 'pending'),
+    amount_paid: normalizeNumber(input?.amountPaid ?? input?.amount_paid, 0),
+    currency: normalizeString(input?.currency, 'ZAR'),
+    enrolled_at: input?.enrolledAt ?? input?.enrolled_at ?? new Date().toISOString(),
+    invoice_sent_at: input?.invoiceSentAt ?? input?.invoice_sent_at ?? null,
+    payment_confirmed_at: input?.paymentConfirmedAt ?? input?.payment_confirmed_at ?? null,
+    notes: input?.notes ?? null,
+    proof_of_payment_url: input?.proofOfPaymentUrl ?? input?.proof_of_payment_url ?? null,
+  };
+
+  const res = await supabase
+    .from(TABLES.enrollments)
+    .upsert(payload, { onConflict: 'id' })
+    .select('*')
+    .single();
+
+  if (res.error) {
+    console.error('saveAcademyEnrollment error:', res.error);
+    throw new Error(res.error.message);
+  }
+
+  return mapAcademyEnrollmentRow(res.data);
 }
 
 /**
@@ -895,6 +1087,10 @@ export const db = {
 
   // auth/profile
   getProfile: getProfileInternal,
+  saveProfile: saveProfileInternal,
+  getAcademyEnrollments: getAcademyEnrollmentsInternal,
+  getStudentEnrollments: getStudentEnrollmentsInternal,
+  saveAcademyEnrollment: saveAcademyEnrollmentInternal,
 
   // dashboard
   getKPISummary: getKPISummaryInternal,

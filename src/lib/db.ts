@@ -133,7 +133,7 @@ export type Profile = {
 
 export type AcademyEnrollment = {
   id: string;
-  studentId: string;
+  studentId?: string | null;
   courseId: string;
   sessionId?: string | null;
   studentName?: string | null;
@@ -487,7 +487,7 @@ function mapProfileRow(p: any): Profile {
 function mapAcademyEnrollmentRow(e: any): AcademyEnrollment {
   return {
     id: normalizeString(e?.id),
-    studentId: normalizeString(e?.student_id),
+    studentId: e?.student_id ?? null,
     courseId: normalizeString(e?.course_id),
     sessionId: e?.session_id ?? null,
     studentName: e?.student_name ?? null,
@@ -811,17 +811,19 @@ async function getStudentEnrollmentsInternal(identifier: string): Promise<Academ
 
 async function saveAcademyEnrollmentInternal(input: any): Promise<AcademyEnrollment> {
   const normalizedEmail = normalizeString(input?.studentEmail ?? input?.student_email).trim().toLowerCase();
-  const existingProfile = normalizedEmail ? await getProfileByEmailInternal(normalizedEmail) : null;
+  const existingProfile = null;
 
   const enrollmentId = isUuid(input?.id) ? normalizeString(input.id) : makeUuid();
-  const studentId = existingProfile?.id ?? (isUuid(input?.studentId ?? input?.student_id) ? normalizeString(input?.studentId ?? input?.student_id) : makeUuid());
+  const studentId = isUuid(input?.studentId ?? input?.student_id)
+    ? normalizeString(input?.studentId ?? input?.student_id)
+    : null;
 
   const payload = {
     id: enrollmentId,
     student_id: studentId,
     course_id: normalizeIdOrThrow(input?.courseId ?? input?.course_id, 'course id'),
     session_id: input?.sessionId ?? input?.session_id ?? null,
-    student_name: normalizeString(input?.studentName ?? input?.student_name, ''),
+    student_name: normalizeString(input?.studentName ?? input?.student_name, 'Student'),
     student_email: normalizedEmail || null,
     status: normalizeString(input?.status, 'requested'),
     payment_status: normalizeString(input?.paymentStatus ?? input?.payment_status, 'pending'),

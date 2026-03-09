@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { db, Course, CourseSession, Instructor } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Course, CourseSession, Instructor } from '../../../lib/db';
 import { supabase } from '../../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { Check, MapPin, Clock, Award, ChevronDown, ChevronUp } from 'lucide-react';
@@ -61,21 +62,30 @@ export default function CourseDetailPage() {
         const { data: { session } } = await supabase.auth.getSession();
         setIsLoggedIn(!!session);
         setUserEmail(session?.user?.email || null);
-
         const courseData = await db.getCourse(id);
         if (courseData) {
           setCourse(courseData);
-          
-          if (courseData.instructorId) {
-            const instructorData = await db.getInstructor(courseData.instructorId);
-            setInstructor(instructorData);
+
+          const courseAny = courseData as any;
+
+          if (courseAny?.instructorId) {
+            const instructorsData = await db.getInstructors();
+            const matchedInstructor = instructorsData.find((i) => i.id === courseAny.instructorId) || null;
+            setInstructor(matchedInstructor);
           }
 
-          if (courseData.type !== 'online') {
-            const sessionsData = await db.getSessions(id);
+          if (courseAny?.type !== 'online') {
+            const sessionsData = await db.getCourseSessions(id);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
             const futureSessions = sessionsData
-              .filter(s => new Date(s.startDate) > new Date())
-              .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+              .filter((s) => {
+                const sessionDate = new Date(`${s.startDate}T00:00:00`);
+                return sessionDate >= today && s.isActive !== false && s.status !== 'cancelled';
+              })
+              .sort((a, b) => new Date(`${a.startDate}T00:00:00`).getTime() - new Date(`${b.startDate}T00:00:00`).getTime());
+
             setSessions(futureSessions);
           }
         }
@@ -91,7 +101,9 @@ export default function CourseDetailPage() {
   const handleEnroll = async () => {
     if (!course) return;
 
-    if (course.type !== 'online' && !selectedSessionId) {
+    const courseAny = course as any;
+
+    if (courseAny?.type !== 'online' && !selectedSessionId) {
       toast.error("Please select a session date to enroll.");
       document.getElementById('sessions-section')?.scrollIntoView({ behavior: 'smooth' });
       return;
@@ -108,7 +120,7 @@ export default function CourseDetailPage() {
     // Logged in -> Check Enrollment
     try {
       const enrollments = await db.getStudentEnrollments(userEmail!);
-      const existing = enrollments.find(e => e.courseId === course.id && (course.type === 'online' || e.sessionId === selectedSessionId));
+      const existing = enrollments.find(e => e.courseId === course.id && (courseAny?.type === 'online' || e.sessionId === selectedSessionId));
 
       if (existing) {
         if (existing.paymentStatus === 'paid') {
@@ -279,8 +291,8 @@ export default function CourseDetailPage() {
                <h4 className="text-xs uppercase tracking-widest text-gray-400 mb-6 text-center">Your Instructor</h4>
                <div className="text-center space-y-4">
                  <div className="w-32 h-32 mx-auto overflow-hidden rounded-full mb-4 bg-gray-100">
-                   {instructor.image ? (
-                     <img src={instructor.image} alt={instructor.name} className="w-full h-full object-cover" />
+                   {instructor.avatarUrl ? (
+                     <img src={instructor.avatarUrl} alt={instructor.name} className="w-full h-full object-cover" />
                    ) : (
                      <div className="w-full h-full flex items-center justify-center text-3xl bg-gray-200">{instructor.name[0]}</div>
                    )}
@@ -295,7 +307,7 @@ export default function CourseDetailPage() {
            )}
 
            {/* Location Info (if in-person) */}
-           {course.type !== 'online' && (
+           {(course as any)?.type !== 'online' && (
              <div className="space-y-4">
                <h4 className="text-xl font-medium flex items-center gap-2">
                  <MapPin className="w-5 h-5 text-gold" /> Location
@@ -333,15 +345,19 @@ export default function CourseDetailPage() {
                    <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
                         <span className="font-medium text-lg">
-                          {new Date(session.startDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                          {new Date(`${session.startDate}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                         {session.status === 'full' && (
                           <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 uppercase tracking-wide">Sold Out</span>
                         )}
                       </div>
-                      <p className="text-gray-500 flex items-center gap-4 text-sm">
-                        <span><Clock className="w-3 h-3 inline mr-1" /> {new Date(session.startDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(session.endDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      <p className="text-gray-500 flex items-center gap-4 text-sm flex-wrap">
+                        <span>
+                          <Clock className="w-3 h-3 inline mr-1" />
+                          {session.startTime || '--:--'}{session.endTime ? ` - ${session.endTime}` : ''}
+                        </span>
                         <span>Capacity: {session.capacity - session.enrolledCount} spots left</span>
+                        {session.intakeLabel && <span>{session.intakeLabel}</span>}
                       </p>
                    </div>
                    
@@ -355,7 +371,7 @@ export default function CourseDetailPage() {
                 </div>
               ))}
             </div>
-          ) : course.type === 'online' ? (
+          ) : (course as any)?.type === 'online' ? (
              <div className="text-center p-8 mb-8">
                <p className="text-xl text-gray-600">This is a self-paced online course. You can start immediately after enrollment.</p>
              </div>
@@ -368,7 +384,7 @@ export default function CourseDetailPage() {
           <div className="flex flex-col items-center gap-4">
              <Button 
                onClick={handleEnroll}
-               disabled={(course.type !== 'online' && !selectedSessionId)}
+               disabled={((course as any)?.type !== 'online' && !selectedSessionId)}
                className="bg-charcoal text-white hover:bg-black text-xl px-12 py-8 h-auto rounded-none uppercase tracking-widest min-w-[300px]"
              >
                Enroll • {course.currency} {course.price.toLocaleString()}

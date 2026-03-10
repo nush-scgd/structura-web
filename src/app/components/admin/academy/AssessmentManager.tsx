@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, AcademyEnrollment, Course, CourseSession } from '../../../../lib/db';
+import { db } from '../../../../lib/db';
+import type { AcademyEnrollment, Course, CourseSession } from '../../../../lib/db';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/input';
 import { Textarea } from '../../ui/textarea';

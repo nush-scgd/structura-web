@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useCartStore } from '../../../lib/store';
-import { db, TenantSettings, AcademyEnrollment, Course } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { TenantSettings, AcademyEnrollment, Course } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { formatCurrency } from '../../../lib/utils';
 import { useNavigate, useSearchParams } from 'react-router';

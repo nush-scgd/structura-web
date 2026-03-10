@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { db, Order, AcademyEnrollment } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Order, AcademyEnrollment } from '../../../lib/db';
 import { DollarSign, Users, ShoppingBag, BookOpen, Calendar, RefreshCw } from 'lucide-react';
 import { formatCurrency } from '../../../lib/utils';
 import { useNavigate } from 'react-router';

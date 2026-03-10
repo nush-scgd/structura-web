@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
-import { db, Stylist, Service } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Stylist, Service } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { ArrowRight, Calendar, Scissors, User } from 'lucide-react';
 import { BOOKING_URL } from '../../../lib/constants';

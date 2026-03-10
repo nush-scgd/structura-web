@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { db, AcademyEnrollment, Course, CourseSession, SessionResource, CourseRequirement, Product, StudentRequirementStatus } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { AcademyEnrollment, Course, CourseSession, SessionResource, CourseRequirement, Product, StudentRequirementStatus } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
 import { Check, Calendar, MapPin, Clock, Video, FileText, ShoppingBag, ExternalLink, PlayCircle, AlertCircle } from 'lucide-react';

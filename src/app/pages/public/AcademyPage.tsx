@@ -1,5 +1,6 @@
 import React from 'react';
-import { db, Course } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Course } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { Link, useNavigate } from 'react-router';
 import { Check, Search, SlidersHorizontal } from 'lucide-react';

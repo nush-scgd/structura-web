@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, Product } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Product } from '../../../lib/db';
 import { useCartStore } from '../../../lib/store';
 import { Button } from '../../components/ui/Button';
 import { toast } from 'sonner';

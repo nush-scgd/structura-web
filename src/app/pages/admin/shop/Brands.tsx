@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, Brand } from '../../../../lib/db';
+import { db } from '../../../../lib/db';
+import type { Brand } from '../../../../lib/db';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';

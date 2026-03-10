@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { db, AdminInvite } from '../../../lib/db';
+import type { db, AdminInvite } from '../../../lib/db';
 import { supabase } from '../../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/input';

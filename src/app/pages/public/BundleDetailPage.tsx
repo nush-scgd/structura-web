@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
-import { db, Bundle, Brand, Promotion, Product } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Bundle, Brand, Promotion, Product } from '../../../lib/db';
 import { formatCurrency } from '../../../lib/utils';
 import { useCartStore } from '../../../lib/store';
 import { Button } from '../../components/ui/Button';

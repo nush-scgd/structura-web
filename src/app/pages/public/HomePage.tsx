@@ -3,7 +3,8 @@ import { motion } from 'motion/react';
 import { ArrowRight, Star, Calendar } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Link } from 'react-router';
-import { db, Product, Course, PlatformSettings } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Product, Course, PlatformSettings } from '../../../lib/db';
 import { formatCurrency } from '../../../lib/utils';
 import { useCartStore } from '../../../lib/store';
 

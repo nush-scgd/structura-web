@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, AcademyEnrollment, Certificate, Course } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { AcademyEnrollment, Certificate, Course } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { Award, Download, Eye, CheckCircle, Clock } from 'lucide-react';
 import { format } from 'date-fns';

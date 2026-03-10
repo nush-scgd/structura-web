@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db, TenantSettings, BookingProvider, Stylist, StylistBooking, PlatformSettings } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { TenantSettings, BookingProvider, Stylist, StylistBooking, PlatformSettings } from '../../../lib/db';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';

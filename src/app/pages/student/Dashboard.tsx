@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db, AcademyEnrollment, CourseSession, Course, SessionResource } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { AcademyEnrollment, CourseSession, Course, SessionResource } from '../../../lib/db';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/Button';
 import { Calendar, PlayCircle, FileText, CheckCircle, Clock, ArrowRight, ExternalLink } from 'lucide-react';

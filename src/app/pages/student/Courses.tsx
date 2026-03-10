@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, AcademyEnrollment, Course, CourseSession } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { AcademyEnrollment, Course, CourseSession } from '../../../lib/db';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent } from '../../components/ui/card';

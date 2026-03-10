@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { db, Profile } from '../lib/db';
+import type { db, Profile } from '../lib/db';
 import { useAuthStore } from '../lib/auth-store';
 
 export type UserRole = 'admin' | 'student' | 'customer';

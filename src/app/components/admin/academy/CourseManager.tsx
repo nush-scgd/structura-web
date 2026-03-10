@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { db, Course, Instructor, TenantSettings } from '../../../../lib/db';
+import { db } from '../../../../lib/db';
+import type { Course, Instructor, TenantSettings } from '../../../../lib/db';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';

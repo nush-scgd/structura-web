@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, Order } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { Order } from '../../../lib/db';
 import { format } from 'date-fns';
 import { Button } from '../../components/ui/Button';
 import { Eye } from 'lucide-react';

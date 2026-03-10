@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "../../ui/dropdown-menu";
+} from '../../ui/dropdown-menu';
 
 export function EnrollmentManager() {
   const [enrollments, setEnrollments] = useState<AcademyEnrollment[]>([]);
@@ -27,7 +27,7 @@ export function EnrollmentManager() {
     const [eData, cData, sData] = await Promise.all([
       db.getAcademyEnrollments(),
       db.getCourses(),
-      db.getCourseSessions()
+      db.getCourseSessions(),
     ]);
     setEnrollments(eData);
     setCourses(cData);
@@ -35,7 +35,7 @@ export function EnrollmentManager() {
   };
 
   const updateStatus = async (id: string, status: AcademyEnrollment['status']) => {
-    const enrollment = enrollments.find(e => e.id === id);
+    const enrollment = enrollments.find((e) => e.id === id);
     if (enrollment) {
       const patch: any = { ...enrollment, status };
 
@@ -60,7 +60,7 @@ export function EnrollmentManager() {
   };
 
   const updatePayment = async (id: string, paymentStatus: AcademyEnrollment['paymentStatus']) => {
-    const enrollment = enrollments.find(e => e.id === id);
+    const enrollment = enrollments.find((e) => e.id === id);
     if (enrollment) {
       const patch: any = { ...enrollment, paymentStatus };
 
@@ -92,31 +92,30 @@ export function EnrollmentManager() {
     }
   };
 
-  const filteredEnrollments = filterSession === 'all' 
-    ? enrollments 
-    : enrollments.filter(e => e.sessionId === filterSession);
+  const filteredEnrollments =
+    filterSession === 'all' ? enrollments : enrollments.filter((e) => e.sessionId === filterSession);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-display">Enrollments</h2>
         <div className="w-64">
-           <Select onValueChange={setFilterSession} defaultValue="all">
-             <SelectTrigger>
-               <SelectValue placeholder="Filter by Session" />
-             </SelectTrigger>
-             <SelectContent>
-               <SelectItem value="all">All Sessions</SelectItem>
-               {sessions.map(s => {
-                 const course = courses.find(c => c.id === s.courseId);
-                 return (
-                   <SelectItem key={s.id} value={s.id}>
-                     {course?.title} - {new Date(s.startDate).toLocaleDateString()}
-                   </SelectItem>
-                 );
-               })}
-             </SelectContent>
-           </Select>
+          <Select onValueChange={setFilterSession} defaultValue="all">
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by Session" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sessions</SelectItem>
+              {sessions.map((s) => {
+                const course = courses.find((c) => c.id === s.courseId);
+                return (
+                  <SelectItem key={s.id} value={s.id}>
+                    {course?.title} - {new Date(s.startDate).toLocaleDateString()}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -135,9 +134,9 @@ export function EnrollmentManager() {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filteredEnrollments.map((enrollment) => {
-              const session = sessions.find(s => s.id === enrollment.sessionId);
-              const course = courses.find(c => c.id === enrollment.courseId);
-              
+              const session = sessions.find((s) => s.id === enrollment.sessionId);
+              const course = courses.find((c) => c.id === enrollment.courseId);
+
               return (
                 <tr key={enrollment.id} className="hover:bg-gray-50/50">
                   <td className="p-4">
@@ -153,29 +152,46 @@ export function EnrollmentManager() {
                     )}
                   </td>
                   <td className="p-4">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
-                      enrollment.status === 'enrolled' ? 'bg-green-50 text-green-700' :
-                      enrollment.status === 'completed' ? 'bg-slate-100 text-slate-700' :
-                      enrollment.status === 'cancelled' ? 'bg-red-50 text-red-700' :
-                      enrollment.status === 'payment_review' ? 'bg-purple-50 text-purple-700' :
-                      enrollment.status === 'awaiting_payment' ? 'bg-orange-50 text-orange-700' :
-                      enrollment.status === 'invoice_sent' ? 'bg-blue-50 text-blue-700' :
-                      enrollment.status === 'no_show' ? 'bg-rose-50 text-rose-700' :
-                      'bg-yellow-50 text-yellow-700'
-                    }`}>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
+                        enrollment.status === 'enrolled'
+                          ? 'bg-green-50 text-green-700'
+                          : enrollment.status === 'completed'
+                            ? 'bg-slate-100 text-slate-700'
+                            : enrollment.status === 'cancelled'
+                              ? 'bg-red-50 text-red-700'
+                              : enrollment.status === 'payment_review'
+                                ? 'bg-purple-50 text-purple-700'
+                                : enrollment.status === 'awaiting_payment'
+                                  ? 'bg-orange-50 text-orange-700'
+                                  : enrollment.status === 'invoice_sent'
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : enrollment.status === 'no_show'
+                                      ? 'bg-rose-50 text-rose-700'
+                                      : 'bg-yellow-50 text-yellow-700'
+                      }`}
+                    >
                       {enrollment.status.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="p-4">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
-                      enrollment.paymentStatus === 'confirmed' ? 'bg-green-50 text-green-700' :
-                      enrollment.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700' :
-                      enrollment.paymentStatus === 'invoiced' ? 'bg-blue-50 text-blue-700' :
-                      enrollment.paymentStatus === 'refunded' ? 'bg-red-50 text-red-700' :
-                      enrollment.paymentStatus === 'failed' ? 'bg-red-50 text-red-700' :
-                      enrollment.paymentStatus === 'partial' ? 'bg-amber-50 text-amber-700' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${
+                        enrollment.paymentStatus === 'confirmed'
+                          ? 'bg-green-50 text-green-700'
+                          : enrollment.paymentStatus === 'paid'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : enrollment.paymentStatus === 'invoiced'
+                              ? 'bg-blue-50 text-blue-700'
+                              : enrollment.paymentStatus === 'refunded'
+                                ? 'bg-red-50 text-red-700'
+                                : enrollment.paymentStatus === 'failed'
+                                  ? 'bg-red-50 text-red-700'
+                                  : enrollment.paymentStatus === 'partial'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
                       {enrollment.paymentStatus}
                     </span>
                   </td>
@@ -185,10 +201,14 @@ export function EnrollmentManager() {
                   <td className="p-4 text-xs text-gray-500">
                     <div>{enrollment.enrolledAt ? new Date(enrollment.enrolledAt).toLocaleDateString() : '—'}</div>
                     {enrollment.invoiceSentAt && (
-                      <div className="text-[11px] text-blue-600 mt-1">Invoice: {new Date(enrollment.invoiceSentAt).toLocaleDateString()}</div>
+                      <div className="text-[11px] text-blue-600 mt-1">
+                        Invoice: {new Date(enrollment.invoiceSentAt).toLocaleDateString()}
+                      </div>
                     )}
                     {enrollment.paymentConfirmedAt && (
-                      <div className="text-[11px] text-green-600 mt-1">Confirmed: {new Date(enrollment.paymentConfirmedAt).toLocaleDateString()}</div>
+                      <div className="text-[11px] text-green-600 mt-1">
+                        Confirmed: {new Date(enrollment.paymentConfirmedAt).toLocaleDateString()}
+                      </div>
                     )}
                   </td>
                   <td className="p-4 text-right">
@@ -221,7 +241,7 @@ export function EnrollmentManager() {
                         <DropdownMenuItem onClick={() => updateStatus(enrollment.id, 'cancelled')} className="text-red-600">
                           Cancel Enrollment
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => window.location.href=`mailto:${enrollment.studentEmail}`}>
+                        <DropdownMenuItem onClick={() => (window.location.href = `mailto:${enrollment.studentEmail}`)}>
                           <Mail className="mr-2 h-4 w-4" /> Email Student
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -230,8 +250,12 @@ export function EnrollmentManager() {
                 </tr>
               );
             })}
-             {filteredEnrollments.length === 0 && (
-                <tr><td colSpan={7} className="p-12 text-center text-gray-500">No enrollments found.</td></tr>
+            {filteredEnrollments.length === 0 && (
+              <tr>
+                <td colSpan={7} className="p-12 text-center text-gray-500">
+                  No enrollments found.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

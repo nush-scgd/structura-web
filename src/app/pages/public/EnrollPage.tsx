@@ -91,6 +91,28 @@ export default function EnrollPage() {
         enrolledAt: nowIso,
       } as any);
 
+      try {
+        const emailResponse = await fetch('/api/send-enrollment-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            studentName: fullName.trim() || 'Student',
+            studentEmail: email.trim(),
+            courseTitle: course.title,
+            sessionLabel: sessionId || undefined,
+            enrollmentId: enrollment.id,
+          }),
+        });
+
+        if (!emailResponse.ok) {
+          console.warn('Enrollment email request failed with status', emailResponse.status);
+        }
+      } catch (emailError) {
+        console.warn('Enrollment emails could not be sent:', emailError);
+      }
+
       setSubmissionRef(enrollment.id);
       setSubmitted(true);
       toast.success('Enrollment request received.');
@@ -124,7 +146,7 @@ export default function EnrollPage() {
             {submissionRef && <p><span className="font-medium">Reference:</span> {submissionRef}</p>}
             <p><span className="font-medium">Payment:</span> EFT required to secure your spot.</p>
             <p className="text-sm text-gray-500 pt-2">
-              An invoice should be sent to the email address above. Until email automation is wired, the academy may need to send this manually.
+              A confirmation email should arrive shortly. Your invoice will follow separately to secure your spot via EFT.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
@@ -192,7 +214,7 @@ export default function EnrollPage() {
           <div className="bg-gray-50 border border-gray-100 p-4 text-sm text-gray-600 space-y-2">
             <p><span className="font-medium text-charcoal">Payment method:</span> EFT</p>
             <p>Your spot is only secured once payment has been received and confirmed.</p>
-            <p>An invoice will be sent to the email address you provide above.</p>
+            <p>A confirmation email will be sent to the email address you provide above, followed by your invoice.</p>
           </div>
 
           <Button

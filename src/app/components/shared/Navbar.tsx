@@ -4,7 +4,8 @@ import { ShoppingBag, Menu, X, User } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useCartStore } from '../../../lib/store';
 import { Button } from '../ui/Button';
-import { db, BookingSettings } from '../../../lib/db';
+import { db } from '../../../lib/db';
+import type { BookingSettings } from '../../../lib/db';
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);

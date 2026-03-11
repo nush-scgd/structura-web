@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { db } from '../../../lib/db';
-import { format, subDays, isSameDay, startOfDay, endOfDay } from 'date-fns';
+import { format, subDays, isSameDay } from 'date-fns';
 import { Download, Calendar, Filter, ArrowUpRight, Search, TrendingUp, TrendingDown, DollarSign, Package, CreditCard, ShoppingBag, Users, UserPlus, UserCheck } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { 
@@ -33,6 +33,12 @@ export default function AdminReports() {
   const [data, setData] = useState<any>(null);
   const [filteredDate, setFilteredDate] = useState<string | null>(null);
 
+  const hasDbMethod = (methodName: string) => typeof (db as any)?.[methodName] === 'function';
+
+  const getSafeArray = (value: any) => Array.isArray(value) ? value : [];
+
+  const getSafeObject = (value: any) => (value && typeof value === 'object' ? value : {});
+
   useEffect(() => {
     loadReportData();
   }, [type, dateRange, filters]);
@@ -42,35 +48,81 @@ export default function AdminReports() {
     setFilteredDate(null);
     try {
       if (type === 'revenue') {
-        const revenueData = await db.getRevenueReport(dateRange.start, dateRange.end);
-        const ordersData = await db.getOrdersReport(dateRange.start, dateRange.end);
-        const enrollmentsData = await db.getEnrollmentsReport(dateRange.start, dateRange.end);
-        setData({ ...revenueData, orders: ordersData.list, enrollments: enrollmentsData.list });
+        const revenueData = hasDbMethod('getRevenueReport')
+          ? await (db as any).getRevenueReport(dateRange.start, dateRange.end)
+          : {};
+
+        const ordersData = hasDbMethod('getOrdersReport')
+          ? await (db as any).getOrdersReport(dateRange.start, dateRange.end)
+          : {};
+
+        const enrollmentsData = hasDbMethod('getEnrollmentsReport')
+          ? await (db as any).getEnrollmentsReport(dateRange.start, dateRange.end)
+          : { list: [], daily: [], summary: null };
+
+        setData({
+          ...getSafeObject(revenueData),
+          orders: getSafeArray((ordersData as any)?.list),
+          enrollments: getSafeArray((enrollmentsData as any)?.list)
+        });
       } else if (type === 'orders') {
-        const ordersData = await db.getOrdersReport(dateRange.start, dateRange.end, {
-             status: filters.status,
-             provider: filters.provider,
-             type: filters.orderType,
-             branchId: filters.branch
+        const ordersData = hasDbMethod('getOrdersReport')
+          ? await (db as any).getOrdersReport(dateRange.start, dateRange.end, {
+              status: filters.status,
+              provider: filters.provider,
+              type: filters.orderType,
+              branchId: filters.branch
+            })
+          : { list: [], daily: [], summary: null };
+
+        setData({
+          list: getSafeArray((ordersData as any)?.list),
+          daily: getSafeArray((ordersData as any)?.daily),
+          summary: (ordersData as any)?.summary ?? null
         });
-        setData(ordersData);
       } else if (type === 'enrollments') {
-        const enrollmentsData = await db.getEnrollmentsReport(dateRange.start, dateRange.end);
-        setData(enrollmentsData);
-      } else if (type === 'students') {
-        const studentsData = await db.getStudentsReport(dateRange.start, dateRange.end);
-        setData(studentsData);
-      } else if (type === 'inventory') {
-        const inventory = await db.report_inventory_on_hand(dateRange.start, dateRange.end);
-        const transactions = await db.inventory_transactions(dateRange.start, dateRange.end);
-        setData({ 
-            ...inventory,
-            transactions: transactions.transactions,
-            chart: transactions.chart
+        const enrollmentsData = hasDbMethod('getEnrollmentsReport')
+          ? await (db as any).getEnrollmentsReport(dateRange.start, dateRange.end)
+          : { list: [], daily: [], summary: null, error: 'getEnrollmentsReport is not available on db' };
+
+        setData({
+          list: getSafeArray((enrollmentsData as any)?.list),
+          daily: getSafeArray((enrollmentsData as any)?.daily),
+          summary: (enrollmentsData as any)?.summary ?? null,
+          error: (enrollmentsData as any)?.error ?? null
         });
+      } else if (type === 'students') {
+        const studentsData = hasDbMethod('getStudentsReport')
+          ? await (db as any).getStudentsReport(dateRange.start, dateRange.end)
+          : { list: [], daily: [], summary: null };
+
+        setData({
+          list: getSafeArray((studentsData as any)?.list),
+          daily: getSafeArray((studentsData as any)?.daily),
+          summary: (studentsData as any)?.summary ?? null
+        });
+      } else if (type === 'inventory') {
+        const inventory = hasDbMethod('report_inventory_on_hand')
+          ? await (db as any).report_inventory_on_hand(dateRange.start, dateRange.end)
+          : { list: [], summary: null };
+
+        const transactions = hasDbMethod('inventory_transactions')
+          ? await (db as any).inventory_transactions(dateRange.start, dateRange.end)
+          : { transactions: [], chart: [] };
+
+        setData({
+          ...getSafeObject(inventory),
+          list: getSafeArray((inventory as any)?.list),
+          summary: (inventory as any)?.summary ?? null,
+          transactions: getSafeArray((transactions as any)?.transactions),
+          chart: getSafeArray((transactions as any)?.chart)
+        });
+      } else {
+        setData({ list: [], daily: [], summary: null });
       }
     } catch (e) {
       console.error(e);
+      setData({ list: [], daily: [], summary: null, error: e instanceof Error ? e.message : 'Failed to load report data' });
     } finally {
       setLoading(false);
     }
@@ -127,6 +179,46 @@ export default function AdminReports() {
       default: return 'Report';
     }
   };
+
+  const revenueRows = useMemo(() => {
+    if (type !== 'revenue') return [];
+
+    return [
+      ...getSafeArray(data?.orders).map((o: any) => ({ ...o, type: 'Order', amount: o.total })),
+      ...getSafeArray(data?.enrollments).map((e: any) => ({ ...e, type: 'Enrollment', amount: e.amountPaid }))
+    ]
+      .filter((item: any) => !filteredDate || isSameDay(new Date(item.createdAt || item.enrolledAt), new Date(filteredDate)))
+      .sort((a: any, b: any) => new Date(b.createdAt || b.enrolledAt).getTime() - new Date(a.createdAt || a.enrolledAt).getTime());
+  }, [type, data, filteredDate]);
+
+  const ordersRows = useMemo(() => {
+    if (type !== 'orders') return [];
+
+    return getSafeArray(data?.list).filter(
+      (o: any) => !filteredDate || isSameDay(new Date(o.createdAt), new Date(filteredDate))
+    );
+  }, [type, data, filteredDate]);
+
+  const enrollmentsRows = useMemo(() => {
+    if (type !== 'enrollments') return [];
+
+    return getSafeArray(data?.list).filter(
+      (e: any) => !filteredDate || isSameDay(new Date(e.enrolledAt), new Date(filteredDate))
+    );
+  }, [type, data, filteredDate]);
+
+  const studentsRows = useMemo(() => {
+    if (type !== 'students') return [];
+
+    return getSafeArray(data?.list).filter(
+      (s: any) => !filteredDate || (s.lastActive && isSameDay(new Date(s.lastActive), new Date(filteredDate)))
+    );
+  }, [type, data, filteredDate]);
+
+  const inventoryRows = useMemo(() => {
+    if (type !== 'inventory') return [];
+    return getSafeArray(data?.list);
+  }, [type, data]);
 
   const renderSummaryCard = (title: string, value: string, subValue?: string, trend?: number) => (
       <div className="bg-white p-6 border border-gray-100 shadow-sm flex flex-col justify-between h-32">
@@ -223,6 +315,11 @@ export default function AdminReports() {
         <div className="text-center py-20 text-gray-400">Loading report data...</div>
       ) : (
         <div className="space-y-8">
+          {data?.error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm shadow-sm">
+              {data.error}
+            </div>
+          )}
           
           {/* Revenue Summary Cards */}
           {type === 'revenue' && data?.summary && (
@@ -297,13 +394,13 @@ export default function AdminReports() {
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
-                                    data={data.byType}
+                                    data={getSafeArray(data?.byType)}
                                     innerRadius={60}
                                     outerRadius={80}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
-                                    {data.byType.map((entry: any, index: number) => (
+                                    {getSafeArray(data?.byType).map((entry: any, index: number) => (
                                         <Cell key={`cell-${index}`} fill={entry.name === 'Products' ? '#D4AF37' : '#111111'} />
                                     ))}
                                 </Pie>
@@ -316,7 +413,7 @@ export default function AdminReports() {
                         </div>
                     </div>
                     <div className="flex justify-center gap-4 mt-4">
-                        {data.byType.map((entry: any, index: number) => (
+                        {getSafeArray(data?.byType).map((entry: any, index: number) => (
                             <div key={index} className="flex items-center text-xs text-gray-500">
                                 <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: entry.name === 'Products' ? '#D4AF37' : '#111111' }}></span>
                                 {entry.name} ({Math.round(entry.value / data.summary.netRevenue * 100)}%)
@@ -425,7 +522,7 @@ export default function AdminReports() {
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                          {data.topItems.map((item: any, idx: number) => (
+                          {getSafeArray(data?.topItems).map((item: any, idx: number) => (
                               <tr key={idx} className="hover:bg-ivory/50">
                                   <td className="p-4 font-medium text-charcoal">{item.name}</td>
                                   <td className="p-4">
@@ -511,53 +608,48 @@ export default function AdminReports() {
                     {/* Revenue Row Rendering */}
                     {type === 'revenue' && (
                       <>
-                        {[...(data.orders || []).map((o: any) => ({...o, type: 'Order', amount: o.total})), 
-                          ...(data.enrollments || []).map((e: any) => ({...e, type: 'Enrollment', amount: e.amountPaid}))]
-                          .filter((item: any) => !filteredDate || isSameDay(new Date(item.createdAt || item.enrolledAt), new Date(filteredDate)))
-                          .sort((a: any, b: any) => new Date(b.createdAt || b.enrolledAt).getTime() - new Date(a.createdAt || a.enrolledAt).getTime())
-                          .map((item: any, idx: number) => (
-                            <tr key={idx} onClick={() => navigate(item.type === 'Order' ? `/admin/orders?id=${item.id}` : `/admin/academy/enrollment/${item.id}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
-                               <td className="p-4">{format(new Date(item.createdAt || item.enrolledAt), 'MMM d, HH:mm')}</td>
-                               <td className="p-4"><span className={`text-[10px] uppercase px-2 py-0.5 rounded ${item.type === 'Order' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{item.type}</span></td>
-                               <td className="p-4 font-mono text-xs text-gray-500">#{item.id.slice(0,8)}</td>
-                               <td className="p-4 text-right font-medium">{formatCurrency(item.amount)}</td>
-                            </tr>
+                        {revenueRows.map((item: any, idx: number) => (
+                          <tr key={idx} onClick={() => navigate(item.type === 'Order' ? `/admin/orders?id=${item.id}` : `/admin/academy/enrollment/${item.id}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
+                             <td className="p-4">{format(new Date(item.createdAt || item.enrolledAt), 'MMM d, HH:mm')}</td>
+                             <td className="p-4"><span className={`text-[10px] uppercase px-2 py-0.5 rounded ${item.type === 'Order' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{item.type}</span></td>
+                             <td className="p-4 font-mono text-xs text-gray-500">#{item.id.slice(0,8)}</td>
+                             <td className="p-4 text-right font-medium">{formatCurrency(item.amount)}</td>
+                          </tr>
                         ))}
                       </>
                     )}
                     
                     {/* Orders Row Rendering */}
                     {type === 'orders' && (
-                      (data.list || [])
-                      .filter((o: any) => !filteredDate || isSameDay(new Date(o.createdAt), new Date(filteredDate)))
-                      .map((order: any) => (
-                         <tr key={order.id} onClick={() => navigate(`/admin/orders?id=${order.id}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
-                            <td className="p-4">{format(new Date(order.createdAt), 'MMM d, yyyy')}</td>
-                            <td className="p-4 font-mono text-xs text-gray-500">#{order.id.slice(0,8)}</td>
-                            <td className="p-4">
-                                <div className="font-medium text-charcoal">{order.customerName}</div>
-                                <div className="text-xs text-gray-400">{order.customerEmail}</div>
-                            </td>
-                            <td className="p-4">
-                                <span className={cn(
-                                    "text-[10px] uppercase px-2 py-0.5 rounded",
-                                    order.status === 'completed' || order.status === 'paid' ? "bg-green-50 text-green-700" :
-                                    order.status === 'pending' ? "bg-yellow-50 text-yellow-700" : "bg-red-50 text-red-700"
-                                )}>
-                                    {order.status}
-                                </span>
-                            </td>
-                            <td className="p-4 text-xs text-gray-500">{order.paymentProvider}</td>
-                            <td className="p-4 text-right font-medium">{formatCurrency(order.total)}</td>
-                         </tr>
-                      ))
+                      <>
+                        {ordersRows.map((order: any) => (
+                           <tr key={order.id} onClick={() => navigate(`/admin/orders?id=${order.id}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
+                              <td className="p-4">{format(new Date(order.createdAt), 'MMM d, yyyy')}</td>
+                              <td className="p-4 font-mono text-xs text-gray-500">#{order.id.slice(0,8)}</td>
+                              <td className="p-4">
+                                  <div className="font-medium text-charcoal">{order.customerName}</div>
+                                  <div className="text-xs text-gray-400">{order.customerEmail}</div>
+                              </td>
+                              <td className="p-4">
+                                  <span className={cn(
+                                      "text-[10px] uppercase px-2 py-0.5 rounded",
+                                      order.status === 'completed' || order.status === 'paid' ? "bg-green-50 text-green-700" :
+                                      order.status === 'pending' ? "bg-yellow-50 text-yellow-700" : "bg-red-50 text-red-700"
+                                  )}>
+                                      {order.status}
+                                  </span>
+                              </td>
+                              <td className="p-4 text-xs text-gray-500">{order.paymentProvider}</td>
+                              <td className="p-4 text-right font-medium">{formatCurrency(order.total)}</td>
+                           </tr>
+                        ))}
+                      </>
                     )}
 
                     {/* Enrollments Row Rendering */}
                     {type === 'enrollments' && (
-                       (data.list || [])
-                       .filter((e: any) => !filteredDate || isSameDay(new Date(e.enrolledAt), new Date(filteredDate)))
-                       .map((enrollment: any) => (
+                      <>
+                        {enrollmentsRows.map((enrollment: any) => (
                           <tr key={enrollment.id} className="hover:bg-ivory/50 transition-colors">
                              <td className="p-4 font-medium">
                                  <button 
@@ -586,14 +678,14 @@ export default function AdminReports() {
                                 </span>
                              </td>
                           </tr>
-                       ))
+                        ))}
+                      </>
                     )}
                     
                     {/* Students Row Rendering */}
                     {type === 'students' && (
-                        (data.list || [])
-                        .filter((s: any) => !filteredDate || (s.lastActive && isSameDay(new Date(s.lastActive), new Date(filteredDate))))
-                        .map((student: any) => (
+                      <>
+                        {studentsRows.map((student: any) => (
                            <tr key={student.id} onClick={() => navigate(`/admin/users?id=${student.id}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
                               <td className="p-4">
                                   <div className="font-medium text-charcoal flex items-center gap-2">
@@ -608,12 +700,14 @@ export default function AdminReports() {
                                   {student.lastActive ? format(new Date(student.lastActive), 'MMM d, yyyy') : 'Never'}
                               </td>
                            </tr>
-                        ))
+                        ))}
+                      </>
                     )}
 
                     {/* Inventory Row Rendering */}
                     {type === 'inventory' && (
-                        (data.list || []).map((item: any) => (
+                      <>
+                        {inventoryRows.map((item: any) => (
                            <tr key={item.id} onClick={() => navigate(`/admin/products?search=${item.sku}`)} className="hover:bg-ivory/50 cursor-pointer transition-colors">
                               <td className="p-4 font-mono text-xs text-gray-500">{item.sku}</td>
                               <td className="p-4 font-medium flex items-center gap-2">
@@ -629,11 +723,16 @@ export default function AdminReports() {
                               <td className="p-4 text-right text-gray-600">{item.unitsSold || 0}</td>
                               <td className="p-4 text-right font-medium">{formatCurrency(item.value)}</td>
                            </tr>
-                        ))
+                        ))}
+                      </>
                     )}
                   </tbody>
                </table>
-               {(!data?.list && !data?.orders && !data?.summary) && (
+               {((type === 'revenue' && revenueRows.length === 0) ||
+                 (type === 'orders' && ordersRows.length === 0) ||
+                 (type === 'enrollments' && enrollmentsRows.length === 0) ||
+                 (type === 'students' && studentsRows.length === 0) ||
+                 (type === 'inventory' && inventoryRows.length === 0)) && (
                  <div className="p-8 text-center text-gray-400">No data available for selected period.</div>
                )}
              </div>

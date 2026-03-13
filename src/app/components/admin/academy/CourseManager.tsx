@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { db } from '../../../../lib/db';
-import type { Course, Instructor, TenantSettings } from '../../../../lib/db';
+import type { Course, TenantSettings } from '../../../../lib/db';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -42,10 +42,18 @@ function getStaticCourseImage(course: any): string | undefined {
   return STATIC_COURSE_IMAGES_BY_ID[id];
 }
 
+function makeCourseId(title: string) {
+  const slug = String(title || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug ? `course_${slug}` : `course_${Date.now()}`;
+}
+
 export function CourseManager() {
   const [view, setView] = useState<'list' | 'create' | 'edit'>('list');
   const [courses, setCourses] = useState<Course[]>([]);
-  const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
 
@@ -56,22 +64,15 @@ export function CourseManager() {
   const loadData = async () => {
     const results = await Promise.allSettled([
       db.getCourses(),
-      db.getInstructors(),
       db.getTenantSettings(),
     ]);
 
-    const [cRes, iRes, sRes] = results;
+    const [cRes, sRes] = results;
 
     if (cRes.status === 'fulfilled') setCourses(cRes.value);
     else {
       console.error('getCourses failed', cRes.reason);
       setCourses([]);
-    }
-
-    if (iRes.status === 'fulfilled') setInstructors(iRes.value);
-    else {
-      console.warn('getInstructors failed, continuing with empty list', iRes.reason);
-      setInstructors([]);
     }
 
     if (sRes.status === 'fulfilled') setSettings(sRes.value);
@@ -83,21 +84,49 @@ export function CourseManager() {
 
   const handleSave = async (data: Course) => {
     try {
-      const id = (editingCourse?.id || (data as any)?.id || crypto.randomUUID()) as string;
+      const id = editingCourse?.id || (data as any)?.id || makeCourseId(data.title);
       const payload = { ...data, id } as any;
+
+      // Build dbPayload with correct schema mapping
+      const dbPayload = {
+        title: payload.title,
+        description: payload.description ?? null,
+        thumbnail: payload.thumbnail ?? null,
+        price: payload.price != null ? Number(payload.price) : null,
+        duration_days: payload.duration_days != null ? Number(payload.duration_days) : null,
+        price_minor:
+          payload.price_minor != null
+            ? Number(payload.price_minor)
+            : payload.price != null
+            ? Math.round(Number(payload.price) * 100)
+            : null,
+        currency: payload.currency ?? 'ZAR',
+        deposit_percent: payload.deposit_percent != null ? Number(payload.deposit_percent) : 50,
+        instructor_name: payload.instructor_name ?? null,
+        max_students: payload.max_students != null ? Number(payload.max_students) : 5,
+        images: Array.isArray(payload.images) ? payload.images.filter(Boolean) : [],
+        is_active: payload.is_active ?? true,
+        status: payload.status ?? 'active',
+        learning_outcomes: Array.isArray(payload.learning_outcomes)
+          ? payload.learning_outcomes.filter(Boolean)
+          : [],
+      };
 
       const anyDb = db as any;
 
       // IMPORTANT: do not call db.saveCourse directly; guard via typeof checks first.
       if (typeof anyDb.saveCourse === 'function') {
-        await anyDb.saveCourse(payload);
+        await anyDb.saveCourse({ ...dbPayload, id });
       } else if (typeof anyDb.upsertCourse === 'function') {
-        await anyDb.upsertCourse(payload);
+        await anyDb.upsertCourse({ ...dbPayload, id });
       } else if (typeof anyDb.updateCourse === 'function' && typeof anyDb.createCourse === 'function') {
-        if (editingCourse?.id) await anyDb.updateCourse(payload);
-        else await anyDb.createCourse(payload);
+        if (editingCourse?.id) {
+          await anyDb.updateCourse(editingCourse.id, dbPayload);
+        } else {
+          await anyDb.createCourse({ id, ...dbPayload });
+        }
       } else if (typeof anyDb.saveCourses === 'function') {
-        await anyDb.saveCourses([payload]);
+        await anyDb.saveCourses([{ ...dbPayload, id }]);
       } else {
         throw new Error(
           'No course save method found on db. Expected one of: saveCourse, upsertCourse, createCourse/updateCourse, saveCourses.'
@@ -138,7 +167,7 @@ export function CourseManager() {
               <tr>
                 <th className="p-4 w-16">Image</th>
                 <th className="p-4">Title</th>
-                <th className="p-4">Type</th>
+                <th className="p-4">Duration</th>
                 <th className="p-4">Price</th>
                 <th className="p-4">Instructor</th>
                 <th className="p-4">Status</th>
@@ -150,10 +179,10 @@ export function CourseManager() {
                 <tr key={course.id} className="hover:bg-gray-50/50">
                   <td className="p-4">
                     <div className="w-10 h-10 rounded bg-gray-100 overflow-hidden">
-                      {(course.thumbnail || (course as any)?.images?.[0] || getStaticCourseImage(course)) && (
+                      {((course as any)?.thumbnail || (course as any)?.images?.[0] || getStaticCourseImage(course)) && (
                         <img
                           src={(
-                            course.thumbnail ||
+                            (course as any)?.thumbnail ||
                             (course as any)?.images?.[0] ||
                             getStaticCourseImage(course)
                           ) as string}
@@ -164,11 +193,9 @@ export function CourseManager() {
                     </div>
                   </td>
                   <td className="p-4 font-medium">{course.title}</td>
-                  <td className="p-4 capitalize">{course.type}</td>
-                  <td className="p-4 font-mono">{course.currency} {course.price}</td>
-                  <td className="p-4">
-                    {instructors.find(i => i.id === course.instructorId)?.name || '-'}
-                  </td>
+                  <td className="p-4">{(course as any)?.duration_days ? `${(course as any).duration_days} days` : '-'}</td>
+                  <td className="p-4 font-mono">{course.currency || 'ZAR'} {course.price ?? '-'}</td>
+                  <td className="p-4">{(course as any)?.instructor_name || '-'}</td>
                   <td className="p-4">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                         course.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
@@ -200,16 +227,14 @@ export function CourseManager() {
 
   return <CourseForm 
     initialData={editingCourse} 
-    instructors={instructors} 
     settings={settings}
     onSave={handleSave} 
     onCancel={() => { setView('list'); setEditingCourse(null); }} 
   />;
 }
 
-function CourseForm({ initialData, instructors, settings, onSave, onCancel }: { 
+function CourseForm({ initialData, settings, onSave, onCancel }: { 
   initialData: Course | null, 
-  instructors: Instructor[],
   settings: TenantSettings | null,
   onSave: (data: Course) => Promise<void>, 
   onCancel: () => void 
@@ -222,39 +247,43 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
           images: (initialData as any)?.images || [],
         } as any)
       : {
-        id: crypto.randomUUID(),
-        status: 'inactive',
-        type: 'in-person',
-        certificationType: 'Completion',
-        currency: settings?.defaultCurrency || 'USD',
+        id: '',
+        title: '',
+        description: '',
         thumbnail: '',
+        price: undefined,
+        duration_days: undefined,
+        price_minor: undefined,
+        currency: settings?.defaultCurrency || 'ZAR',
+        deposit_percent: 50,
+        instructor_name: '',
+        max_students: 5,
         images: [],
-        learningOutcomes: [''],
-        curriculum: [],
-        isAccredited: false
+        is_active: true,
+        status: 'active',
+        learning_outcomes: [''],
       }) as any
   });
 
-  const { fields: outcomeFields, append: appendOutcome, remove: removeOutcome } = useFieldArray({
-    control,
-    name: "learningOutcomes" as any // Type cast workaround for simple string array with react-hook-form
-  });
-  
-  // Hand-rolled simple string array management because useFieldArray expects object array
-  const [outcomes, setOutcomes] = useState<string[]>(initialData?.learningOutcomes || ['']);
+  // Hand-rolled simple string array management for learning outcomes
+  const [outcomes, setOutcomes] = useState<string[]>(
+    (initialData as any)?.learning_outcomes ||
+    (initialData as any)?.learningOutcomes ||
+    ['']
+  );
   
   const updateOutcome = (index: number, value: string) => {
     const newOutcomes = [...outcomes];
     newOutcomes[index] = value;
     setOutcomes(newOutcomes);
-    setValue('learningOutcomes', newOutcomes);
+    setValue('learning_outcomes' as any, newOutcomes);
   };
 
   const addOutcome = () => setOutcomes([...outcomes, '']);
   const deleteOutcome = (index: number) => {
     const newOutcomes = outcomes.filter((_, i) => i !== index);
     setOutcomes(newOutcomes);
-    setValue('learningOutcomes', newOutcomes);
+    setValue('learning_outcomes' as any, newOutcomes);
   };
 
   // Ensure currency is set
@@ -264,15 +293,15 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
     }
   }, [settings, initialData, setValue]);
 
-  const watchedType = watch('type');
-  const watchedIsAccredited = watch('isAccredited');
-
   const [uploadingThumb, setUploadingThumb] = useState(false);
 
   const handleThumbnailUpload = async (file: File) => {
-    const courseId = (watch('id') as any) || initialData?.id || crypto.randomUUID();
-    // ensure id exists in form state (important for new courses)
-    setValue('id', courseId as any);
+    let courseId = (watch('id') as any) || initialData?.id;
+    // Ensure id exists for new courses
+    if (!courseId) {
+      courseId = makeCourseId(watch('title') || '');
+      setValue('id', courseId as any);
+    }
 
     setUploadingThumb(true);
     try {
@@ -322,45 +351,24 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
           {/* Basic Info */}
           <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
             <h3 className="font-display text-lg">Course Details</h3>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2 col-span-2">
-                <Label>Title</Label>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Title *</Label>
                 <Input {...register('title', { required: 'Title is required' })} />
                 {errors.title && <p className="text-red-500 text-xs">{errors.title.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label>Tagline</Label>
-                <Input {...register('tagline')} placeholder="Short catchy phrase" />
+                <Label>Description</Label>
+                <Textarea {...register('description')} className="min-h-[100px]" placeholder="Course description and details..." />
               </div>
-               <div className="space-y-2">
-                <Label>Type</Label>
-                <Select onValueChange={(val) => setValue('type', val as any)} defaultValue={initialData?.type || 'in-person'}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="in-person">In-Person</SelectItem>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="hybrid">Hybrid</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label>Instructor Name</Label>
+                <Input {...register('instructor_name')} placeholder="e.g. Sarah Johnson" />
               </div>
-            </div>
-            <div className="space-y-2">
-               <Label>Value Proposition (Why it matters)</Label>
-               <Textarea {...register('description')} className="min-h-[100px]" />
-            </div>
-            <div className="space-y-2">
-               <Label>Target Audience</Label>
-               <Input {...register('targetAudience')} placeholder="e.g. Beginners, Advanced Stylists" />
-            </div>
-            <div className="space-y-2">
-               <Label>Prerequisites</Label>
-               <Input {...register('prerequisites')} placeholder="e.g. Basic cutting knowledge" />
             </div>
           </div>
 
-          {/* Curriculum / Outcomes */}
+          {/* Learning Outcomes */}
           <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
             <h3 className="font-display text-lg">Learning Outcomes</h3>
             <div className="space-y-3">
@@ -382,30 +390,64 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
             </div>
           </div>
 
-          {/* Location for In-Person */}
-          {(watchedType === 'in-person' || watchedType === 'hybrid') && (
-            <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-              <h3 className="font-display text-lg">Location</h3>
-              <div className="space-y-2">
-                <Label>Venue Name</Label>
-                <Input {...register('location')} placeholder="e.g. Structura Main Academy" />
+          {/* Media */}
+          <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
+            <h3 className="font-display text-lg">Media</h3>
+            <div className="space-y-2">
+              <Label>Thumbnail</Label>
+
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingThumb}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleThumbnailUpload(file);
+                    // allow selecting same file again
+                    e.currentTarget.value = '';
+                  }}
+                />
               </div>
-              <div className="space-y-2">
-                <Label>Address</Label>
-                <Input {...register('address')} placeholder="123 Fashion Ave..." />
+
+              <div className="text-xs text-gray-500">
+                Or paste a URL below:
               </div>
+
+              <Input {...register('thumbnail')} placeholder="https://..." />
+
+              {(
+                (watch('thumbnail') as any) ||
+                (watch('images' as any) as any)?.[0] ||
+                getStaticCourseImage({ id: watch('id') })
+              ) && (
+                <div className="mt-2 aspect-video rounded bg-gray-100 overflow-hidden">
+                  <img
+                    src={(
+                      (watch('thumbnail') as any) ||
+                      (watch('images' as any) as any)?.[0] ||
+                      getStaticCourseImage({ id: watch('id') })
+                    ) as string}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {uploadingThumb && (
+                <div className="text-xs text-gray-500">Uploading...</div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="space-y-8">
-          {/* Logistics */}
+          {/* Course Settings */}
           <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-             <h3 className="font-display text-lg">Logistics</h3>
+             <h3 className="font-display text-lg">Settings</h3>
              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Status</Label>
-                  <Select onValueChange={(val) => setValue('status', val as any)} defaultValue={initialData?.status || 'inactive'}>
+                  <Select onValueChange={(val) => setValue('status', val as any)} defaultValue={initialData?.status || 'active'}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
@@ -413,24 +455,27 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Instructor</Label>
-                  <Select onValueChange={(val) => setValue('instructorId', val)} defaultValue={initialData?.instructorId}>
-                    <SelectTrigger><SelectValue placeholder="Select Instructor" /></SelectTrigger>
-                    <SelectContent>
-                      {instructors.map(i => (
-                        <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex items-center gap-2">
+                  <Switch 
+                    checked={watch('is_active' as any) ?? true} 
+                    onCheckedChange={(checked) => setValue('is_active' as any, checked)} 
+                  />
+                  <Label>Is Active</Label>
                 </div>
+             </div>
+          </div>
+
+          {/* Course Logistics */}
+          <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
+             <h3 className="font-display text-lg">Logistics</h3>
+             <div className="space-y-4">
                 <div className="space-y-2">
-                   <Label>Duration</Label>
-                   <Input {...register('duration')} placeholder="e.g. 2 Days, 6 Weeks" />
+                   <Label>Duration (days)</Label>
+                   <Input type="number" {...register('duration_days' as any, { valueAsNumber: true })} placeholder="e.g. 5" />
                 </div>
                  <div className="space-y-2">
-                   <Label>Default Capacity</Label>
-                   <Input type="number" {...register('defaultCapacity', { valueAsNumber: true })} />
+                   <Label>Max Students</Label>
+                   <Input type="number" {...register('max_students' as any, { valueAsNumber: true })} />
                 </div>
              </div>
           </div>
@@ -447,7 +492,10 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
                   >
                    <SelectTrigger><SelectValue /></SelectTrigger>
                    <SelectContent>
-                     {settings?.allowedCurrencies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                     <SelectItem value="ZAR">ZAR</SelectItem>
+                     <SelectItem value="USD">USD</SelectItem>
+                     <SelectItem value="EUR">EUR</SelectItem>
+                     <SelectItem value="GBP">GBP</SelectItem>
                    </SelectContent>
                  </Select>
                </div>
@@ -455,103 +503,12 @@ function CourseForm({ initialData, instructors, settings, onSave, onCancel }: {
                  <Label>Price</Label>
                  <Input type="number" {...register('price', { valueAsNumber: true })} />
                </div>
-             </div>
-          </div>
-
-          {/* Certification */}
-           <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-             <h3 className="font-display text-lg">Certification</h3>
-             <div className="flex items-center gap-2">
-               <Switch 
-                 checked={watch('isAccredited')} 
-                 onCheckedChange={(checked) => setValue('isAccredited', checked)} 
-               />
-               <Label>Accredited Course</Label>
-             </div>
-             
-             {watchedIsAccredited && (
                <div className="space-y-2">
-                 <Label>Accrediting Body</Label>
-                 <Input {...register('accreditingBody')} />
+                 <Label>Deposit Percent</Label>
+                 <Input type="number" {...register('deposit_percent' as any, { valueAsNumber: true })} placeholder="50" />
                </div>
-             )}
-
-             <div className="space-y-2">
-                <Label>Certificate Type</Label>
-                <Select onValueChange={(val) => setValue('certificationType', val as any)} defaultValue={initialData?.certificationType || 'Completion'}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Completion">Completion</SelectItem>
-                    <SelectItem value="Accredited Certificate">Accredited Certificate</SelectItem>
-                    <SelectItem value="Diploma">Diploma</SelectItem>
-                  </SelectContent>
-                </Select>
-             </div>
-             
-             <div className="space-y-2">
-                <Label>Certificate Template</Label>
-                <Select onValueChange={(val) => setValue('certificateTemplateId', val)} defaultValue={initialData?.certificateTemplateId}>
-                  <SelectTrigger><SelectValue placeholder="Select Template" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="classic">Classic Ivory</SelectItem>
-                    <SelectItem value="modern">Modern Minimal</SelectItem>
-                    <SelectItem value="gold">Gold Foil Luxury</SelectItem>
-                  </SelectContent>
-                </Select>
              </div>
           </div>
-
-           {/* Media */}
-           <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-             <h3 className="font-display text-lg">Media</h3>
-             <div className="space-y-2">
-               <Label>Thumbnail</Label>
-
-               <div className="flex items-center gap-2">
-                 <Input
-                   type="file"
-                   accept="image/*"
-                   disabled={uploadingThumb}
-                   onChange={(e) => {
-                     const file = e.target.files?.[0];
-                     if (file) handleThumbnailUpload(file);
-                     // allow selecting same file again
-                     e.currentTarget.value = '';
-                   }}
-                 />
-               </div>
-
-               <div className="text-xs text-gray-500">
-                 Or paste a URL below (advanced):
-               </div>
-
-               <Input {...register('thumbnail')} placeholder="https://..." />
-               <div className="text-xs text-gray-500">
-                 Stored as <span className="font-mono">courses.images</span> (array) and mirrored to <span className="font-mono">thumbnail</span> for UI.
-               </div>
-
-               {(
-                 (watch('thumbnail') as any) ||
-                 (watch('images' as any) as any)?.[0] ||
-                 getStaticCourseImage({ id: watch('id') })
-               ) && (
-                 <div className="mt-2 aspect-video rounded bg-gray-100 overflow-hidden">
-                   <img
-                     src={(
-                       (watch('thumbnail') as any) ||
-                       (watch('images' as any) as any)?.[0] ||
-                       getStaticCourseImage({ id: watch('id') })
-                     ) as string}
-                     className="w-full h-full object-cover"
-                   />
-                 </div>
-               )}
-
-               {uploadingThumb && (
-                 <div className="text-xs text-gray-500">Uploading...</div>
-               )}
-             </div>
-           </div>
         </div>
       </div>
     </form>

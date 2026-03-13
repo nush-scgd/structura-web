@@ -196,7 +196,12 @@ function safeArray<T>(v: unknown): T[] {
 }
 
 function normalizeIdOrThrow(id: unknown, label = "id"): string {
-  const s = normalizeString(id).trim();
+  const candidate =
+    typeof id === "object" && id !== null && "id" in (id as Record<string, unknown>)
+      ? (id as Record<string, unknown>).id
+      : id;
+
+  const s = normalizeString(candidate).trim();
   if (!s || s === "[object Object]") {
     throw new Error(`Invalid ${label}. Expected string/uuid, got: ${String(id)}`);
   }
@@ -777,6 +782,7 @@ async function saveProfileInternal(input: any): Promise<Profile> {
   return mapProfileRow(res.data);
 }
 
+
 async function getAcademyEnrollmentsInternal(): Promise<AcademyEnrollment[]> {
   const res = await supabase
     .from(TABLES.enrollments)
@@ -789,6 +795,146 @@ async function getAcademyEnrollmentsInternal(): Promise<AcademyEnrollment[]> {
   }
 
   return (res.data ?? []).map(mapAcademyEnrollmentRow);
+}
+
+async function getEnrollmentsReportInternal(start: Date | string, end: Date | string): Promise<{
+  list: any[];
+  daily: Array<{ date: string; enrollments: number; completions: number }>;
+  summary: {
+    totalEnrollments: number;
+    completions: number;
+    completionRate: number;
+    enrollmentsChange: number;
+    completionsChange: number;
+    rateChange: number;
+  };
+}> {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+
+  const rangeStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const rangeEnd = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1);
+  const periodMs = Math.max(rangeEnd.getTime() - rangeStart.getTime(), 24 * 60 * 60 * 1000);
+  const prevStart = new Date(rangeStart.getTime() - periodMs);
+  const prevEnd = new Date(rangeStart.getTime());
+
+  const [enrollmentsRes, coursesRes] = await Promise.all([
+    supabase
+      .from(TABLES.enrollments)
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from(TABLES.courses)
+      .select('id,title')
+  ]);
+
+  if (enrollmentsRes.error) {
+    console.error('getEnrollmentsReport enrollments error:', enrollmentsRes.error);
+    throw new Error(enrollmentsRes.error.message);
+  }
+
+  if (coursesRes.error) {
+    console.error('getEnrollmentsReport courses lookup error:', coursesRes.error);
+    throw new Error(coursesRes.error.message);
+  }
+
+  const courseTitleMap = new Map<string, string>(
+    (coursesRes.data ?? []).map((course: any) => [
+      normalizeString(course.id),
+      normalizeString(course.title, 'Untitled Course')
+    ])
+  );
+
+  const getEffectiveDate = (row: any): Date | null => {
+    const raw = row?.enrolled_at ?? row?.created_at ?? null;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const isInRange = (date: Date | null, startValue: Date, endValue: Date) => {
+    if (!date) return false;
+    const time = date.getTime();
+    return time >= startValue.getTime() && time < endValue.getTime();
+  };
+
+  const allRows = (enrollmentsRes.data ?? []).map((row: any) => {
+    const mapped = mapAcademyEnrollmentRow(row);
+    const effectiveDate = getEffectiveDate(row);
+    return {
+      ...mapped,
+      enrolledAt: mapped.enrolledAt ?? mapped.createdAt ?? row?.created_at ?? null,
+      createdAt: mapped.createdAt ?? row?.created_at ?? null,
+      courseTitle: courseTitleMap.get(normalizeString(mapped.courseId)) ?? 'Untitled Course',
+      studentName: mapped.studentName ?? mapped.studentEmail ?? 'Student',
+      _effectiveDate: effectiveDate,
+    };
+  });
+
+  const currentRows = allRows.filter((row: any) => isInRange(row._effectiveDate, rangeStart, rangeEnd));
+  const previousRows = allRows.filter((row: any) => isInRange(row._effectiveDate, prevStart, prevEnd));
+
+  const dailyMap = new Map<string, { date: string; enrollments: number; completions: number }>();
+
+  for (let cursor = new Date(rangeStart); cursor < rangeEnd; cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)) {
+    const bucket = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()).toISOString();
+    dailyMap.set(bucket, { date: bucket, enrollments: 0, completions: 0 });
+  }
+
+  currentRows.forEach((row: any) => {
+    const sourceDate = row._effectiveDate as Date | null;
+    if (!sourceDate) return;
+
+    const bucket = new Date(sourceDate.getFullYear(), sourceDate.getMonth(), sourceDate.getDate()).toISOString();
+    const existing = dailyMap.get(bucket) ?? { date: bucket, enrollments: 0, completions: 0 };
+    existing.enrollments += 1;
+
+    const status = normalizeString(row.status).toLowerCase();
+    if (status === 'completed' || status === 'passed') {
+      existing.completions += 1;
+    }
+
+    dailyMap.set(bucket, existing);
+  });
+
+  const countCompletions = (rows: any[]) =>
+    rows.filter((row: any) => {
+      const status = normalizeString(row.status).toLowerCase();
+      return status === 'completed' || status === 'passed';
+    }).length;
+
+  const totalEnrollments = currentRows.length;
+  const completions = countCompletions(currentRows);
+  const completionRate = totalEnrollments > 0 ? (completions / totalEnrollments) * 100 : 0;
+
+  const prevTotalEnrollments = previousRows.length;
+  const prevCompletions = countCompletions(previousRows);
+  const prevCompletionRate = prevTotalEnrollments > 0 ? (prevCompletions / prevTotalEnrollments) * 100 : 0;
+
+  const calcPercentChange = (current: number, previous: number) => {
+    if (previous === 0) return current === 0 ? 0 : 100;
+    return ((current - previous) / previous) * 100;
+  };
+
+  return {
+    list: currentRows
+      .map(({ _effectiveDate, ...row }: any) => row)
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.enrolledAt ?? b.createdAt ?? 0).getTime() - new Date(a.enrolledAt ?? a.createdAt ?? 0).getTime()
+      ),
+    daily: Array.from(dailyMap.values()).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    ),
+    summary: {
+      totalEnrollments,
+      completions,
+      completionRate,
+      enrollmentsChange: calcPercentChange(totalEnrollments, prevTotalEnrollments),
+      completionsChange: calcPercentChange(completions, prevCompletions),
+      rateChange: calcPercentChange(completionRate, prevCompletionRate),
+    },
+  };
 }
 
 async function getStudentEnrollmentsInternal(identifier: string): Promise<AcademyEnrollment[]> {
@@ -1005,14 +1151,80 @@ async function deleteServiceInternal(id: string): Promise<void> {
   if (res.error) throw new Error(res.error.message);
 }
 
+function sanitizeCoursePayload(input: any) {
+  const images = Array.isArray(input?.images)
+    ? input.images.filter((x: any) => typeof x === "string" && x.trim().length > 0)
+    : [];
+
+  const learningOutcomesSource = input?.learning_outcomes ?? input?.learningOutcomes;
+  const learning_outcomes = Array.isArray(learningOutcomesSource)
+    ? learningOutcomesSource.filter((x: any) => typeof x === "string" && x.trim().length > 0)
+    : [];
+
+  return {
+    title: normalizeString(input?.title),
+    description: input?.description ?? null,
+    thumbnail: input?.thumbnail ?? null,
+    price:
+      input?.price != null && input?.price !== ""
+        ? Number(input.price)
+        : null,
+    duration_days:
+      input?.duration_days != null && input?.duration_days !== ""
+        ? Number(input.duration_days)
+        : input?.durationDays != null && input?.durationDays !== ""
+        ? Number(input.durationDays)
+        : null,
+    price_minor:
+      input?.price_minor != null && input?.price_minor !== ""
+        ? Number(input.price_minor)
+        : input?.priceMinor != null && input?.priceMinor !== ""
+        ? Number(input.priceMinor)
+        : input?.price != null && input?.price !== ""
+        ? Math.round(Number(input.price) * 100)
+        : null,
+    currency: normalizeString(input?.currency, "ZAR"),
+    deposit_percent:
+      input?.deposit_percent != null && input?.deposit_percent !== ""
+        ? Number(input.deposit_percent)
+        : input?.depositPercent != null && input?.depositPercent !== ""
+        ? Number(input.depositPercent)
+        : null,
+    instructor_name: input?.instructor_name ?? input?.instructorName ?? null,
+    max_students:
+      input?.max_students != null && input?.max_students !== ""
+        ? Number(input.max_students)
+        : input?.maxStudents != null && input?.maxStudents !== ""
+        ? Number(input.maxStudents)
+        : null,
+    images,
+    is_active: input?.is_active ?? input?.isActive ?? true,
+    status: normalizeString(input?.status, "active"),
+    learning_outcomes,
+  };
+}
+
 async function createCourseInternal(input: any): Promise<any> {
-  const res = await supabase.from(TABLES.courses).insert(input).select("*").single();
+  const payload = {
+    id: normalizeString(input?.id),
+    ...sanitizeCoursePayload(input),
+  };
+
+  const res = await supabase.from(TABLES.courses).insert(payload).select("*").single();
   if (res.error) throw new Error(res.error.message);
   return res.data;
 }
-async function updateCourseInternal(id: string, patch: any): Promise<any> {
+async function updateCourseInternal(id: string | { id?: string }, patch: any): Promise<any> {
   const courseId = normalizeIdOrThrow(id, "course id");
-  const res = await supabase.from(TABLES.courses).update(patch).eq("id", courseId).select("*").single();
+  const sanitizedPatch = sanitizeCoursePayload(patch);
+
+  const res = await supabase
+    .from(TABLES.courses)
+    .update(sanitizedPatch)
+    .eq("id", courseId)
+    .select("*")
+    .single();
+
   if (res.error) throw new Error(res.error.message);
   return res.data;
 }
@@ -1091,6 +1303,7 @@ export const db = {
   getProfile: getProfileInternal,
   saveProfile: saveProfileInternal,
   getAcademyEnrollments: getAcademyEnrollmentsInternal,
+  getEnrollmentsReport: getEnrollmentsReportInternal,
   getStudentEnrollments: getStudentEnrollmentsInternal,
   saveAcademyEnrollment: saveAcademyEnrollmentInternal,
 

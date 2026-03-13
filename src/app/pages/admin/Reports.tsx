@@ -39,6 +39,16 @@ export default function AdminReports() {
 
   const getSafeObject = (value: any) => (value && typeof value === 'object' ? value : {});
 
+  const getSafeNumber = (value: any, fallback = 0) => {
+    const num = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  };
+
+  const getSafeString = (value: any, fallback = '0') => {
+    if (value === null || value === undefined) return fallback;
+    return String(value);
+  };
+
   useEffect(() => {
     loadReportData();
   }, [type, dateRange, filters]);
@@ -324,49 +334,49 @@ export default function AdminReports() {
           {/* Revenue Summary Cards */}
           {type === 'revenue' && data?.summary && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {renderSummaryCard('Net Revenue', formatCurrency(data.summary.netRevenue), 'Total earned', data.summary.changePercent)}
-                  {renderSummaryCard('Gross Revenue', formatCurrency(data.summary.grossRevenue), 'Before refunds/discounts')}
-                  {renderSummaryCard('Refunds', formatCurrency(data.summary.refunds), 'Total returned')}
-                  {renderSummaryCard('Discounts', formatCurrency(data.summary.discounts), 'Total discounted')}
+                  {renderSummaryCard('Net Revenue', formatCurrency(getSafeNumber(data.summary.netRevenue)), 'Total earned', getSafeNumber(data.summary.changePercent))}
+                  {renderSummaryCard('Gross Revenue', formatCurrency(getSafeNumber(data.summary.grossRevenue)), 'Before refunds/discounts')}
+                  {renderSummaryCard('Refunds', formatCurrency(getSafeNumber(data.summary.refunds)), 'Total returned')}
+                  {renderSummaryCard('Discounts', formatCurrency(getSafeNumber(data.summary.discounts)), 'Total discounted')}
               </div>
           )}
 
           {/* Orders Summary Cards */}
           {type === 'orders' && data?.summary && (
               <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                  {renderSummaryCard('Total Orders', data.summary.totalOrders.toString(), 'All time', data.summary.ordersChange)}
-                  {renderSummaryCard('Paid', data.summary.paidOrders.toString(), 'Completed transactions')}
-                  {renderSummaryCard('Pending', data.summary.pendingOrders.toString(), 'Awaiting payment')}
-                  {renderSummaryCard('Cancelled', data.summary.cancelledOrders.toString(), 'Refunded/Void')}
-                  {renderSummaryCard('Avg. Order Value', formatCurrency(data.summary.aov), 'Per transaction', data.summary.aovChange)}
+                  {renderSummaryCard('Total Orders', getSafeString(data.summary.totalOrders), 'All time', getSafeNumber(data.summary.ordersChange))}
+                  {renderSummaryCard('Paid', getSafeString(data.summary.paidOrders), 'Completed transactions')}
+                  {renderSummaryCard('Pending', getSafeString(data.summary.pendingOrders), 'Awaiting payment')}
+                  {renderSummaryCard('Cancelled', getSafeString(data.summary.cancelledOrders), 'Refunded/Void')}
+                  {renderSummaryCard('Avg. Order Value', formatCurrency(getSafeNumber(data.summary.aov)), 'Per transaction', getSafeNumber(data.summary.aovChange))}
               </div>
           )}
 
           {/* Enrollments Summary Cards */}
           {type === 'enrollments' && data?.summary && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {renderSummaryCard('Total Enrollments', data.summary.totalEnrollments.toString(), 'In selected period', data.summary.enrollmentsChange)}
-                  {renderSummaryCard('Completions', data.summary.completions.toString(), 'Finished courses', data.summary.completionsChange)}
-                  {renderSummaryCard('Completion Rate', `${data.summary.completionRate.toFixed(1)}%`, 'Of total enrolled', data.summary.rateChange)}
+                  {renderSummaryCard('Total Enrollments', getSafeString(data.summary.totalEnrollments), 'In selected period', getSafeNumber(data.summary.enrollmentsChange))}
+                  {renderSummaryCard('Completions', getSafeString(data.summary.completions), 'Finished courses', getSafeNumber(data.summary.completionsChange))}
+                  {renderSummaryCard('Completion Rate', `${getSafeNumber(data.summary.completionRate).toFixed(1)}%`, 'Of total enrolled', getSafeNumber(data.summary.rateChange))}
               </div>
           )}
 
           {/* Students Summary Cards */}
           {type === 'students' && data?.summary && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {renderSummaryCard('Active Students', data.summary.activeStudents.toString(), 'Unique active users')}
-                  {renderSummaryCard('New Customers', data.summary.newCustomers.toString(), 'Signed up in period')}
-                  {renderSummaryCard('Returning', data.summary.returningCustomers.toString(), 'Previously active')}
-                  {renderSummaryCard('Avg Revenue / Customer', formatCurrency(data.summary.avgRevenuePerCustomer), 'Based on active users')}
+                  {renderSummaryCard('Active Students', getSafeString(data.summary.activeStudents), 'Unique active users')}
+                  {renderSummaryCard('New Customers', getSafeString(data.summary.newCustomers), 'Signed up in period')}
+                  {renderSummaryCard('Returning', getSafeString(data.summary.returningCustomers), 'Previously active')}
+                  {renderSummaryCard('Avg Revenue / Customer', formatCurrency(getSafeNumber(data.summary.avgRevenuePerCustomer)), 'Based on active users')}
               </div>
           )}
 
           {/* Inventory Summary Cards */}
           {type === 'inventory' && data?.summary && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {renderSummaryCard('Total SKUs', data.summary.totalSkus.toString(), 'Active products')}
-                  {renderSummaryCard('Low Stock Items', data.summary.lowStockCount.toString(), 'Below reorder level')}
-                  {renderSummaryCard('Total Stock Value', formatCurrency(data.summary.totalValue), 'Current inventory')}
+                  {renderSummaryCard('Total SKUs', getSafeString(data.summary.totalSkus), 'Active products')}
+                  {renderSummaryCard('Low Stock Items', getSafeString(data.summary.lowStockCount), 'Below reorder level')}
+                  {renderSummaryCard('Total Stock Value', formatCurrency(getSafeNumber(data.summary.totalValue)), 'Current inventory')}
               </div>
           )}
 
@@ -409,14 +419,14 @@ export default function AdminReports() {
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                             <span className="text-xs text-gray-400 uppercase tracking-widest">Total</span>
-                            <span className="text-lg font-medium text-charcoal">{formatCurrency(data.summary.netRevenue)}</span>
+                            <span className="text-lg font-medium text-charcoal">{formatCurrency(getSafeNumber(data.summary.netRevenue))}</span>
                         </div>
                     </div>
                     <div className="flex justify-center gap-4 mt-4">
                         {getSafeArray(data?.byType).map((entry: any, index: number) => (
                             <div key={index} className="flex items-center text-xs text-gray-500">
                                 <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: entry.name === 'Products' ? '#D4AF37' : '#111111' }}></span>
-                                {entry.name} ({Math.round(entry.value / data.summary.netRevenue * 100)}%)
+                                {entry.name} ({getSafeNumber(data.summary?.netRevenue) > 0 ? Math.round((getSafeNumber(entry.value) / getSafeNumber(data.summary.netRevenue)) * 100) : 0}%)
                             </div>
                         ))}
                     </div>
@@ -442,19 +452,21 @@ export default function AdminReports() {
 
           {/* Enrollments Chart */}
           {type === 'enrollments' && data?.daily && (
-             <div className="bg-white p-6 border border-gray-100 h-96 shadow-sm">
-                <h3 className="text-sm font-medium text-charcoal mb-6 uppercase tracking-wider">Enrollment Activity</h3>
-                <ResponsiveContainer width="100%" height="100%">
-                     <LineChart data={data.daily} onClick={handleChartClick}>
-                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                       <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => format(new Date(val), 'MMM d')} />
-                       <YAxis tick={{fontSize: 10}} allowDecimals={false} />
-                       <Tooltip labelFormatter={(label) => format(new Date(label), 'MMM d, yyyy')} />
-                       <Legend />
-                       <Line type="monotone" dataKey="enrollments" name="New Enrollments" stroke="#D4AF37" strokeWidth={2} dot={{r: 4, fill: '#D4AF37'}} activeDot={{r: 6}} />
-                       <Line type="monotone" dataKey="completions" name="Completions" stroke="#111111" strokeWidth={2} dot={{r: 4, fill: '#111111'}} activeDot={{r: 6}} />
-                     </LineChart>
-                </ResponsiveContainer>
+             <div className="bg-white p-6 border border-gray-100 h-[28rem] shadow-sm flex flex-col">
+                <h3 className="text-sm font-medium text-charcoal mb-4 uppercase tracking-wider">Enrollment Activity</h3>
+                <div className="flex-1 min-h-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                       <LineChart data={data.daily} onClick={handleChartClick} margin={{ top: 8, right: 12, left: 0, bottom: 32 }}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                         <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => format(new Date(val), 'MMM d')} />
+                         <YAxis tick={{fontSize: 10}} allowDecimals={false} />
+                         <Tooltip labelFormatter={(label) => format(new Date(label), 'MMM d, yyyy')} />
+                         <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: 12 }} />
+                         <Line type="monotone" dataKey="enrollments" name="New Enrollments" stroke="#D4AF37" strokeWidth={2} dot={{r: 4, fill: '#D4AF37'}} activeDot={{r: 6}} />
+                         <Line type="monotone" dataKey="completions" name="Completions" stroke="#111111" strokeWidth={2} dot={{r: 4, fill: '#111111'}} activeDot={{r: 6}} />
+                       </LineChart>
+                  </ResponsiveContainer>
+                </div>
              </div>
           )}
 
